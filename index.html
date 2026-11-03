@@ -27,9 +27,11 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--desk);color:var(--ink);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
 .wrap{max-width:640px;margin:0 auto;padding:max(12px,env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-right,0px)) calc(84px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
-.apphead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 4px}
-.apphead h1{font-size:18px;font-weight:600;margin:0}
-.who{font-size:13px;color:var(--ink2)}
+html{scroll-padding-top:calc(60px + env(safe-area-inset-top,0px))}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);background:var(--desk);z-index:10}
+.apphead{position:sticky;top:env(safe-area-inset-top,0px);z-index:4;background:var(--desk);display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--line)}
+.apphead h1{font-size:18px;font-weight:600;margin:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who{font-size:13px;color:var(--ink2);white-space:nowrap;flex:none}
 .sheet{background-color:var(--paper);background-image:linear-gradient(to right,transparent 29px,var(--margin) 29px,var(--margin) 30px,transparent 30px),repeating-linear-gradient(to bottom,transparent 0,transparent 27px,var(--rule) 27px,var(--rule) 28px);border:1px solid var(--line);border-radius:10px;padding:28px 10px 28px 38px;line-height:28px;overflow:hidden}
 .sheet h2{font-size:17px;font-weight:600;margin:0;line-height:28px}
 .sheet p{margin:0;line-height:28px}
@@ -101,7 +103,7 @@ ol.how{margin:0;padding-left:20px;font-size:14px;display:flex;flex-direction:col
 </head>
 <body>
 <div class="wrap">
-  <header class="apphead"><h1>매상 노트</h1><span class="who" id="who"></span></header>
+  <header class="apphead"><h1 id="appTitle">매상 노트</h1><span class="who" id="who"></span></header>
   <div id="banners" class="stack"></div>
   <main id="view" class="stack"></main>
 </div>
@@ -210,7 +212,7 @@ function planMerge(list){
   });
   return{add,conflicts,same};
 }
-const fileName=()=>'매상백업-'+todayStr()+'.csv';
+const fileName=()=>'maesang-backup-'+todayStr()+'.csv';
 function makeFile(){return new File([toCSV()],fileName(),{type:'text/csv'})}
 const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 function download(file){const u=URL.createObjectURL(file);const a=document.createElement('a');a.href=u;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),30000)}
@@ -417,6 +419,7 @@ function dataView(){
    +'<section class="card"><h2>두 사람 기록 맞추기</h2><div class="stack"><ol class="how"><li>입력한 사람이 <b>기록 보내기</b>를 눌러 파일을 문자나 카톡으로 보냅니다.</li><li>받은 사람은 파일을 휴대폰에 저장합니다.</li><li>받은 사람이 <b>받은 파일 합치기</b>를 눌러 그 파일을 고릅니다.</li></ol><div class="btns"><button type="button" class="main" data-act="share">기록 보내기</button><button type="button" data-act="pick">받은 파일 합치기</button></div></div></section>'
    +'<section class="card"><h2>백업</h2><div class="stack"><p class="note">기록 '+count+'건 · 마지막 백업 '+esc(when(cfg.lastBackupAt))+'</p><div class="btns"><button type="button" data-act="backup">휴대폰에 저장</button><button type="button" data-act="share">iCloud·구글 드라이브에 저장</button></div><p class="note">휴대폰 안에 저장한 파일은 휴대폰을 잃어버리면 함께 사라집니다. 가끔은 iCloud나 구글 드라이브에도 저장하세요. 새 휴대폰에서는 받은 파일 합치기로 백업 파일을 고르면 복원됩니다. 백업 파일은 엑셀에서도 열립니다.</p></div></section>'
    +'<section class="card"><h2>자동 복사본</h2><div class="stack"><p class="note">하루 한 번 이 휴대폰 안에 최근 14개까지 보관합니다. 실수로 잘못 고쳤을 때 되돌리는 용도입니다.</p><div id="restoreAsk"></div>'+(snaps?'<div class="list">'+snaps+'</div>':'<p class="note">아직 복사본이 없습니다. 기록을 입력하면 다음에 앱을 열 때 만들어집니다.</p>')+'</div></section>'
+   +'<section class="card"><h2>앱 이름</h2><form id="appNameForm" class="stack" novalidate><label>맨 위에 표시될 이름<input id="appNameInput" autocomplete="off" maxlength="20" placeholder="매상 노트" value="'+esc(cfg.appName||'')+'"></label><p class="note">비워 두면 매상 노트로 돌아갑니다. 이 휴대폰에만 적용됩니다. 홈 화면 아이콘 이름은 아이콘을 추가할 때 정합니다.</p><div class="btns"><button type="submit">앱 이름 저장</button></div></form></section>'
    +'<section class="card"><h2>내 이름</h2><form id="nameForm" class="stack" novalidate><label>입력자로 표시될 이름<input id="nameInput" autocomplete="off" maxlength="20" value="'+esc(cfg.name||'')+'"></label><p class="err" id="nameErr" role="alert" hidden></p><div class="btns"><button type="submit">이름 저장</button></div></form></section>';
 }
 async function handleFile(file){
@@ -432,6 +435,7 @@ async function handleFile(file){
 
 /* ---------- screen ---------- */
 async function render(){
+  const appName=cfg.appName||'매상 노트';$('appTitle').textContent=appName;document.title=appName;
   $('who').textContent=cfg.name?cfg.name+' 입력 중':'';
   document.querySelectorAll('#tabs button').forEach(b=>{if(b.dataset.tab===tab)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
   renderBanners();
@@ -483,6 +487,7 @@ document.addEventListener('submit',async e=>{
   e.preventDefault();
   if(e.target.id==='entry')submitEntry();
   if(e.target.id==='firstForm'){const n=cleanName($('firstName').value);if(!n){const x=$('firstErr');x.textContent='이름을 입력하세요.';x.hidden=false;return}await setCfg('name',n);$('tabs').hidden=false;render()}
+  if(e.target.id==='appNameForm'){await setCfg('appName',String($('appNameInput').value).trim().slice(0,20));await render();toast('앱 이름을 저장했습니다')}
   if(e.target.id==='nameForm'){const n=cleanName($('nameInput').value);if(!n){const x=$('nameErr');x.textContent='이름을 입력하세요.';x.hidden=false;return}await setCfg('name',n);render();toast('이름을 저장했습니다')}
 });
 document.addEventListener('change',e=>{
