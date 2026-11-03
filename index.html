@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>매상 노트</title>
+<meta name="theme-color" content="#FBFAF5">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="매상 노트">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+/* Layout: ruled notebook sheets on a plain desk, one thumb-reach tab bar. Every sheet carries its own 28px rule grid. */
+:root{
+  color-scheme:light;
+  --desk:#F4F3ED; --paper:#FFFEFB; --rule:#E9F0F7; --margin:#F8E3E3;
+  --ink:#2C2C2A; --ink2:#5F5E5A; --ink3:#888780; --line:#D3D1C7;
+  --pen:#1F4E8C; --pen-bg:#E6F1FB; --up:#3B6D11; --down:#A32D2D; --warn-bg:#FFF6E0; --warn:#7A5206;
+  --bar:#BFCBD8; --bar-prev:#DDDACE; --hi:#378ADD; --lo:#E8875F;
+  --font:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--desk);color:var(--ink);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+.wrap{max-width:640px;margin:0 auto;padding:max(12px,env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-right,0px)) calc(84px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
+.apphead{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 4px}
+.apphead h1{font-size:18px;font-weight:600;margin:0}
+.who{font-size:13px;color:var(--ink2)}
+.sheet{background-color:var(--paper);background-image:linear-gradient(to right,transparent 29px,var(--margin) 29px,var(--margin) 30px,transparent 30px),repeating-linear-gradient(to bottom,transparent 0,transparent 27px,var(--rule) 27px,var(--rule) 28px);border:1px solid var(--line);border-radius:10px;padding:28px 10px 28px 38px;line-height:28px;overflow:hidden}
+.sheet h2{font-size:17px;font-weight:600;margin:0;line-height:28px}
+.sheet p{margin:0;line-height:28px}
+.gap{height:28px}
+.small{font-size:13px;color:var(--ink2)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));column-gap:10px}
+.lab{font-size:13px;color:var(--ink2)}
+.num{font-size:20px;font-weight:600}
+.cmp{font-size:12px;color:var(--ink2);white-space:nowrap}
+.up{color:var(--up)}.down{color:var(--down)}
+table.wk{width:100%;border-collapse:collapse;table-layout:fixed;line-height:28px}
+.wk th{font-weight:600;text-align:right;padding:0 4px;height:28px;font-size:14px}
+.wk td{text-align:right;padding:0 4px;height:56px;vertical-align:top;font-size:14px}
+.wk th:first-child,.wk td:first-child{text-align:left;padding-left:0}
+.wk tbody tr[data-date]{cursor:pointer}
+.wk tbody tr[data-date]:hover td{background:rgba(31,78,140,.05)}
+.sub{display:block;font-size:12px;line-height:28px;color:var(--ink2);white-space:nowrap;font-weight:400}
+.blank{color:var(--ink3)}
+.today{color:var(--pen);font-weight:600}
+.tot td{font-weight:600}
+.card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px}
+.card h2{font-size:16px;font-weight:600;margin:0 0 10px}
+.card p{margin:0}
+.stack{display:flex;flex-direction:column;gap:10px}
+.fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.fields .wide,.fields button{grid-column:1/-1}
+label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--ink2);min-width:0}
+input,select{font:inherit;font-size:16px;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:8px;height:46px;padding:0 10px;width:100%;min-width:0}
+input[type=date]{-webkit-appearance:none;appearance:none;display:block}
+button{font:inherit;font-size:15px;color:var(--ink);background:#fff;border:1px solid #B4B2A9;border-radius:8px;min-height:46px;padding:0 14px;cursor:pointer}
+button.main{background:var(--pen);border-color:var(--pen);color:#fff;font-weight:600}
+button.mini{min-height:36px;padding:0 10px;font-size:14px}
+button.danger{color:var(--down);border-color:#E3B5B5}
+button.tog{min-height:36px;padding:0 10px;font-size:13px}
+button.tog[aria-pressed=true]{background:var(--pen-bg);color:#0C447C;border-color:#85B7EB}
+:focus-visible{outline:2px solid var(--pen);outline-offset:2px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+.btns>button{flex:1 1 130px}
+.wkTotal{font-size:17px;font-weight:600;color:var(--pen);margin-right:auto;white-space:nowrap}
+.wkNav{display:flex;gap:6px}
+.wkNav>button{flex:0 0 auto;padding:0 8px}
+.note{font-size:13px;color:var(--ink2)}
+.err{font-size:14px;color:var(--down)}
+.confirm{background:var(--warn-bg);border:1px solid #EAD19A;border-radius:8px;padding:10px;color:var(--warn);font-size:14px;display:flex;flex-direction:column;gap:8px}
+.banner{background:var(--pen-bg);border:1px solid #B5D4F4;border-radius:10px;padding:12px;font-size:14px;color:#0C447C;display:flex;flex-direction:column;gap:8px}
+.bar{display:grid;grid-template-columns:30px minmax(0,1fr) 92px;align-items:center;height:28px;column-gap:6px;font-size:13px}
+.trk{display:flex;flex-direction:column;gap:2px}
+.fil{height:10px;background:var(--bar);border-radius:2px;min-width:0}
+.fil.prev{height:4px;background:var(--bar-prev)}
+.fil.hi{background:var(--hi)}.fil.lo{background:var(--lo)}
+.val{text-align:right;font-size:12px;color:var(--ink2);white-space:nowrap}
+.key{display:flex;flex-wrap:wrap;column-gap:12px;font-size:12px;color:var(--ink2)}
+.key i{display:inline-block;width:12px;height:8px;border-radius:2px;margin-right:4px}
+.list{display:flex;flex-direction:column}
+.list>div{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid #EFEDE5;font-size:14px}
+.list>div:first-child{border-top:0}
+.conflict{border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;font-size:14px}
+.choice{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.choice button{min-height:58px;font-size:14px;line-height:1.35;padding:6px}
+.choice button[aria-pressed=true]{background:var(--pen-bg);border-color:#378ADD;color:#0C447C;font-weight:600}
+nav.tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--line);display:flex;justify-content:center;padding:0 env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);z-index:5}
+nav.tabs button{flex:1;max-width:214px;border:0;background:none;border-radius:0;min-height:58px;font-size:15px;color:var(--ink2)}
+nav.tabs button[aria-current=page]{color:var(--pen);font-weight:600;box-shadow:inset 0 3px 0 var(--pen)}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(72px + env(safe-area-inset-bottom,0px));background:var(--ink);color:#fff;padding:9px 14px;border-radius:8px;font-size:14px;z-index:6;max-width:88vw;text-align:center}
+ol.how{margin:0;padding-left:20px;font-size:14px;display:flex;flex-direction:column;gap:6px}
+@media (min-width:520px){.sheet{padding-left:50px;padding-right:16px;background-image:linear-gradient(to right,transparent 39px,var(--margin) 39px,var(--margin) 40px,transparent 40px),repeating-linear-gradient(to bottom,transparent 0,transparent 27px,var(--rule) 27px,var(--rule) 28px)}.fields{grid-template-columns:repeat(4,minmax(0,1fr))}.fields .wide,.fields button{grid-column:auto}.wrap{padding-left:16px;padding-right:16px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="apphead"><h1>매상 노트</h1><span class="who" id="who"></span></header>
+  <div id="banners" class="stack"></div>
+  <main id="view" class="stack"></main>
+</div>
+<nav class="tabs" id="tabs" aria-label="화면 이동">
+  <button type="button" data-tab="week">이번 주</button>
+  <button type="button" data-tab="stats">분석</button>
+  <button type="button" data-tab="data">백업·합치기</button>
+</nav>
+<div id="toast" role="status" hidden></div>
+<input type="file" id="filePick" hidden>
+<script>
+'use strict';
+const DOW=['일','월','화','수','목','금','토'];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- dates: plain YYYY-MM-DD strings, computed in UTC so time zones cannot shift a day ---------- */
+const pad=n=>String(n).padStart(2,'0');
+function todayStr(){const d=new Date();return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())}
+function toUTC(s){const[y,m,d]=s.split('-').map(Number);return new Date(Date.UTC(y,m-1,d))}
+function fromUTC(d){return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())}
+function addDays(s,n){const d=toUTC(s);d.setUTCDate(d.getUTCDate()+n);return fromUTC(d)}
+function dow(s){return toUTC(s).getUTCDay()}
+function mondayOf(s){const w=dow(s);return addDays(s,w===0?-6:1-w)}
+function md(s){const[,m,d]=s.split('-').map(Number);return m+'/'+d}
+const year=s=>Number(s.slice(0,4));
+function longDate(s){const[y,m,d]=s.split('-').map(Number);return y+'년 '+m+'월 '+d+'일 '+DOW[dow(s)]+'요일'}
+function validDate(s){return /^\d{4}-\d{2}-\d{2}$/.test(s)&&fromUTC(toUTC(s))===s}
+/* Same weekday last year: 52 weeks back, the way the paper sheet lines up Mon 2026-11-02 with Mon 2025-11-03. */
+const lastYear=s=>addDays(s,-364);
+
+/* ---------- money: integer cents only ---------- */
+function usd(c){const a=Math.abs(c);return '$'+Math.floor(a/100).toLocaleString('en-US')+'.'+pad(a%100)}
+function parseMoney(t){const s=String(t).replace(/[$,\s]/g,'');if(!/^\d+(\.\d{0,2})?$/.test(s)&&!/^\.\d{1,2}$/.test(s))return null;const[w,f='']=s.split('.');const c=Number(w||0)*100+Number((f+'00').slice(0,2));return c>999999999?null:c}
+function signed(c){return (c>0?'+':c<0?'-':'')+usd(c)}
+function pct(n,o){if(!o)return '';const v=Math.round((n-o)/o*100);return (v>0?'+':'')+v+'%'}
+const tone=v=>v>0?'up':v<0?'down':'';
+const cleanName=n=>String(n||'').replace(/^[=+\-@\s]+/,'').slice(0,20).trim();
+
+/* ---------- storage: IndexedDB on this phone only ---------- */
+let db,recs=new Map(),cfg={};
+function openDB(){return new Promise((ok,no)=>{const r=indexedDB.open('maesang-note',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('records',{keyPath:'date'});d.createObjectStore('kv');d.createObjectStore('snapshots',{keyPath:'id',autoIncrement:true})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+function tx(store,mode,fn){return new Promise((ok,no)=>{const t=db.transaction(store,mode);const s=t.objectStore(store);let out;const q=fn(s);if(q)q.onsuccess=()=>{out=q.result};t.oncomplete=()=>ok(out);t.onerror=()=>no(t.error);t.onabort=()=>no(t.error)})}
+const putRec=r=>tx('records','readwrite',s=>s.put(r));
+const setCfg=(k,v)=>{cfg[k]=v;return tx('kv','readwrite',s=>s.put(v,k))};
+async function loadAll(){
+  const list=await tx('records','readonly',s=>s.getAll());recs=new Map(list.map(r=>[r.date,r]));
+  const keys=await tx('kv','readonly',s=>s.getAllKeys());const vals=await tx('kv','readonly',s=>s.getAll());
+  cfg={};keys.forEach((k,i)=>cfg[k]=vals[i]);
+}
+async function replaceAll(list){await tx('records','readwrite',s=>{s.clear();list.forEach(r=>s.put(r))});recs=new Map(list.map(r=>[r.date,r]))}
+const live=d=>{const r=recs.get(d);return r&&!r.deleted?r:null};
+async function snapshot(label){
+  const list=[...recs.values()];if(!list.length)return;
+  await tx('snapshots','readwrite',s=>s.add({at:new Date().toISOString(),day:todayStr(),label,records:list}));
+  const all=await tx('snapshots','readonly',s=>s.getAll());
+  if(all.length>14){const old=all.slice(0,all.length-14);await tx('snapshots','readwrite',s=>{old.forEach(o=>s.delete(o.id))})}
+}
+async function changed(){await setCfg('lastChangeAt',new Date().toISOString())}
+
+/* ---------- backup file: a CSV that Excel can open and this app can read back ---------- */
+function csvCell(v){v=String(v==null?'':v);return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
+function toCSV(){
+  const rows=[['날짜','요일','매상','손님','입력자','수정시각','상태']];
+  [...recs.values()].sort((a,b)=>a.date<b.date?-1:1).forEach(r=>rows.push([r.date,DOW[dow(r.date)],(r.cents/100).toFixed(2),r.customers,r.by||'',r.updatedAt||'',r.deleted?'삭제':'']));
+  return '﻿'+rows.map(x=>x.map(csvCell).join(',')).join('\r\n')+'\r\n';
+}
+function parseCSVRows(t){
+  const out=[];let row=[],cell='',q=false;t=t.replace(/^﻿/,'');
+  for(let i=0;i<t.length;i++){const c=t[i];
+    if(q){if(c==='"'){if(t[i+1]==='"'){cell+='"';i++}else q=false}else cell+=c}
+    else if(c==='"')q=true;
+    else if(c===','){row.push(cell);cell=''}
+    else if(c==='\n'||c==='\r'){if(c==='\r'&&t[i+1]==='\n')i++;row.push(cell);out.push(row);row=[];cell=''}
+    else cell+=c}
+  if(cell!==''||row.length){row.push(cell);out.push(row)}
+  return out.filter(r=>r.some(x=>x.trim()!==''));
+}
+function normDate(s){s=String(s).trim();let m;
+  if((m=s.match(/^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/)))s=m[1]+'-'+pad(+m[2])+'-'+pad(+m[3]);
+  else if((m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)))s=m[3]+'-'+pad(+m[1])+'-'+pad(+m[2]);
+  return validDate(s)?s:null}
+function parseBackup(text){
+  const rows=parseCSVRows(text);if(rows.length<1)throw new Error('empty');
+  const h=rows[0].map(x=>x.trim());const col=n=>h.indexOf(n);
+  if(col('날짜')<0||col('매상')<0||col('손님')<0)throw new Error('format');
+  const list=[],bad=[];
+  rows.slice(1).forEach((r,i)=>{
+    const date=normDate(r[col('날짜')]||'');const cents=parseMoney(r[col('매상')]||'');const cust=String(r[col('손님')]||'').trim();
+    if(!date||cents===null||!/^\d{1,6}$/.test(cust)){bad.push(i+2);return}
+    const at=r[col('수정시각')]||'';
+    list.push({date,cents,customers:Number(cust),by:cleanName(r[col('입력자')]),updatedAt:isNaN(Date.parse(at))?'':at,deleted:(r[col('상태')]||'').trim()==='삭제',rej:[]});
+  });
+  return{list,bad};
+}
+const sig=r=>r.deleted?'deleted':r.cents+'|'+r.customers;
+function planMerge(list){
+  const add=[],conflicts=[];let same=0;
+  const seen=new Set();
+  list.forEach(n=>{if(seen.has(n.date))return;seen.add(n.date);
+    const l=recs.get(n.date);
+    if(!l){add.push(n);return}
+    if(sig(l)===sig(n)){same++;return}
+    if((l.rej||[]).includes(sig(n))){same++;return}
+    conflicts.push({date:n.date,mine:l,theirs:n,pick:null});
+  });
+  return{add,conflicts,same};
+}
+const fileName=()=>'매상백업-'+todayStr()+'.csv';
+function makeFile(){return new File([toCSV()],fileName(),{type:'text/csv'})}
+const isIOS=/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+function download(file){const u=URL.createObjectURL(file);const a=document.createElement('a');a.href=u;a.download=file.name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),30000)}
+async function share(file){if(navigator.canShare&&navigator.canShare({files:[file]})){await navigator.share({files:[file],title:'매상 노트 기록'});return true}return false}
+async function markBackup(){await setCfg('lastBackupAt',new Date().toISOString());await setCfg('promptDay',todayStr());renderBanners()}
+async function saveToPhone(){
+  const f=makeFile();
+  try{
+    if(isIOS&&await share(f)){await markBackup();toast('목록에서 "파일에 저장"을 고른 파일이 백업입니다');return}
+    download(f);await markBackup();toast('다운로드 폴더에 저장했습니다');
+  }catch(e){if(e.name!=='AbortError')toast('저장하지 못했습니다. 다시 시도해 주세요')}
+}
+async function shareOut(){
+  const f=makeFile();
+  try{
+    if(await share(f)){await markBackup();return}
+    download(f);await markBackup();toast('파일을 저장했습니다. 문자나 카톡에 첨부해 보내세요');
+  }catch(e){if(e.name!=='AbortError')toast('보내지 못했습니다. 다시 시도해 주세요')}
+}
+
+/* ---------- small UI helpers ---------- */
+let toastT;function toast(m){const t=$('toast');t.textContent=m;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>{t.hidden=true},3500)}
+let tab='week',weekStart=mondayOf(todayStr()),formDate=todayStr(),statYear=year(todayStr()),statKey='customers',merge=null,pendingConfirm=null;
+
+function renderBanners(){
+  const b=$('banners');let h='';
+  const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
+  if(!standalone&&!cfg.installDismissed&&(isIOS||deferredInstall)){
+    h+='<div class="banner"><div>'+(isIOS?'Safari 아래쪽의 공유 버튼을 누르고 <b>홈 화면에 추가</b>를 고르세요. 기록은 꼭 홈 화면의 앱에서 입력하세요. Safari에서 입력한 기록은 앱으로 옮겨지지 않습니다.':'홈 화면에 추가해 두면 앱처럼 열 수 있고 기록도 더 안전합니다.')+'</div><div class="btns">'+(deferredInstall?'<button type="button" class="main" data-act="install">홈 화면에 추가</button>':'')+'<button type="button" data-act="install-later">닫기</button></div></div>';
+  }
+  const dirty=recs.size&&(!cfg.lastBackupAt||(cfg.lastChangeAt&&cfg.lastChangeAt>cfg.lastBackupAt));
+  if(dirty&&cfg.promptDay!==todayStr()&&cfg.name){
+    h+='<div class="banner"><div>지난 백업 뒤로 바뀐 기록이 있습니다. 오늘 백업할까요?</div><div class="btns"><button type="button" class="main" data-act="backup">지금 백업</button><button type="button" data-act="backup-later">나중에</button></div></div>';
+  }
+  b.innerHTML=h;
+}
+
+/* ---------- this week ---------- */
+function weekDays(start){
+  const days=[];for(let i=0;i<6;i++)days.push(addDays(start,i));
+  const sun=addDays(start,6);if(live(sun)||live(lastYear(sun)))days.push(sun);
+  return days;
+}
+function summarize(days){
+  let s=0,c=0,n=0,ps=0,pc=0,ls=0,lc=0,both=0;
+  days.forEach(d=>{const r=live(d),p=live(lastYear(d));
+    if(r){s+=r.cents;c+=r.customers;n++}
+    if(r&&p){ps+=p.cents;pc+=p.customers;ls+=r.cents;lc+=r.customers;both++}});
+  return{s,c,n,ps,pc,ls,lc,both};
+}
+function weekSheet(){
+  const days=weekDays(weekStart);const today=todayStr();
+  const y=year(days[0]),py=year(lastYear(days[0]));
+  const a=days[0],z=addDays(weekStart,5);
+  const m=summarize(days);
+  const lastYearText=(v,cur,base,fmt)=>m.both?'<span>'+py+'년 '+fmt(v)+' </span><span class="'+tone(cur-base)+'">'+pct(cur,base)+'</span>':py+'년 기록 없음';
+  const partial=m.both&&m.both<m.n;
+  let rows='';
+  days.forEach(d=>{
+    const r=live(d),l=lastYear(d),p=live(l);
+    const diff=r&&p?r.cents-p.cents:null;
+    rows+='<tr data-date="'+d+'"><td class="'+(d===today?'today':'')+'" style="font-weight:600">'+DOW[dow(d)]+'</td>'
+      +(p?'<td>'+usd(p.cents)+'<span class="sub">'+md(l)+' · '+p.customers+'명</span></td>':'<td class="blank">기록 없음<span class="sub">'+md(l)+'</span></td>')
+      +(r?'<td>'+usd(r.cents)+'<span class="sub">'+md(d)+' · '+r.customers+'명</span></td>':'<td class="blank">'+(d>today?'':'입력 전')+'<span class="sub">'+md(d)+'</span></td>')
+      +(diff!==null?'<td class="'+tone(diff)+'">'+signed(diff)+'<span class="sub">'+pct(r.cents,p.cents)+'</span></td>':'<td class="blank">-</td>')+'</tr>';
+  });
+  let fs=0,fc=0,fn=0;days.forEach(d=>{const p=live(lastYear(d));if(p){fs+=p.cents;fc+=p.customers;fn++}});
+  rows+='<tr class="tot"><td>합계</td><td>'+usd(fs)+'<span class="sub">'+fn+'일 · '+fc+'명</span></td><td>'+usd(m.s)+'<span class="sub">'+m.n+'일 · '+m.c+'명</span></td><td></td></tr>';
+  const isNow=weekStart===mondayOf(today);
+  return '<section class="sheet"><div class="row"><h2 style="white-space:nowrap">'+(isNow?'이번 주':'지난 기록')+' 매상</h2><span class="wkTotal" id="weekTotal">'+usd(m.s)+'</span><div class="wkNav"><button type="button" class="mini" data-act="wk-prev" aria-label="이전 주">이전</button>'+(isNow?'':'<button type="button" class="mini" data-act="wk-now">이번 주</button>')+'<button type="button" class="mini" data-act="wk-next" aria-label="다음 주">다음</button></div></div>'
+    +'<p class="small">'+y+'년 '+md(a)+'~'+md(z)+' · '+py+'년 '+md(lastYear(a))+'~'+md(lastYear(z))+'</p><div class="gap"></div>'
+    +'<table class="wk" aria-label="요일별 '+py+'년과 '+y+'년 매상 비교"><thead><tr><th style="width:12%">요일</th><th style="width:30%">'+py+'년</th><th style="width:30%">'+y+'년</th><th style="width:28%">증감</th></tr></thead><tbody>'+rows+'</tbody></table><div class="gap"></div>'
+    +'<div class="stats"><div><p class="lab">'+y+'년 누적 매상</p><p class="num">'+usd(m.s)+'</p><p class="cmp">'+lastYearText(m.ps,m.ls,m.ps,usd)+'</p></div>'
+    +'<div><p class="lab">'+y+'년 누적 손님</p><p class="num">'+m.c+'명</p><p class="cmp">'+lastYearText(m.pc,m.lc,m.pc,v=>v+'명')+'</p></div></div>'
+    +(partial?'<p class="small">'+py+'년 기록이 있는 '+m.both+'일만 비교했습니다.</p>':'')
+    +'</section>';
+}
+function formCard(){
+  return '<section class="card"><h2>매상 입력</h2><form id="entry" class="stack" novalidate><div class="fields"><label class="wide">날짜<input id="fDate" type="date" max="'+todayStr()+'" value="'+formDate+'" required></label><label>매상 ($)<input id="fSales" inputmode="decimal" autocomplete="off" placeholder="633.00"></label><label>손님 수<input id="fCust" inputmode="numeric" autocomplete="off" placeholder="17"></label><button type="submit" class="main" style="align-self:end">저장</button></div><p class="note" id="fInfo"></p><p class="err" id="fErr" role="alert" hidden></p><div id="fConfirm"></div></form></section>';
+}
+function fillForm(){
+  const d=$('fDate');if(!d)return;
+  const r=live(formDate);d.value=formDate;
+  $('fSales').value=r?(r.cents/100).toFixed(2):'';$('fCust').value=r?r.customers:'';
+  $('fErr').hidden=true;$('fConfirm').innerHTML='';pendingConfirm=null;
+  $('fInfo').innerHTML=validDate(formDate)?esc(longDate(formDate))+(r?' · '+esc(r.by||'이름 없음')+' 입력 · <button type="button" class="mini danger" data-act="del-ask">삭제</button>':''):'';
+}
+async function commit(date,cents,customers){
+  const old=recs.get(date);
+  const r={date,cents,customers,by:cfg.name||'',updatedAt:new Date().toISOString(),deleted:false,rej:old?old.rej||[]:[]};
+  await putRec(r);recs.set(date,r);await changed();
+  weekStart=mondayOf(date);
+  let next=date;
+  if(date<todayStr()){next=addDays(date,1);if(dow(next)===0&&!live(next))next=addDays(next,1);if(next>todayStr())next=todayStr()}
+  formDate=next;render();toast(longDate(date)+' 저장했습니다');
+}
+function submitEntry(){
+  const err=m=>{const e=$('fErr');e.textContent=m;e.hidden=false};
+  const date=$('fDate').value;
+  if(!validDate(date))return err('날짜를 고르세요.');
+  if(date>todayStr())return err('오늘 이후 날짜는 입력할 수 없습니다.');
+  const cents=parseMoney($('fSales').value);
+  if(cents===null)return err('매상을 숫자로 입력하세요. 예: 633.00');
+  const cs=$('fCust').value.trim();
+  if(!/^\d{1,6}$/.test(cs))return err('손님 수를 숫자로 입력하세요. 예: 17');
+  const customers=Number(cs);$('fErr').hidden=true;
+  const old=live(date);
+  if(old&&(old.cents!==cents||old.customers!==customers)){
+    pendingConfirm={date,cents,customers};
+    $('fConfirm').innerHTML='<div class="confirm"><div>'+esc(longDate(date))+'에는 이미 '+usd(old.cents)+', '+old.customers+'명이 있습니다('+esc(old.by||'이름 없음')+' 입력). '+usd(cents)+', '+customers+'명으로 바꿀까요?</div><div class="btns"><button type="button" class="main" data-act="ow-yes">바꾸기</button><button type="button" data-act="ow-no">그대로 두기</button></div></div>';
+    return;
+  }
+  commit(date,cents,customers);
+}
+async function deleteRec(date){
+  const old=recs.get(date);if(!old)return;
+  const r={...old,deleted:true,by:cfg.name||'',updatedAt:new Date().toISOString()};
+  await putRec(r);recs.set(date,r);await changed();render();toast('삭제했습니다');
+}
+
+/* ---------- analysis ---------- */
+function yearsWithData(){const s=new Set([year(todayStr())]);recs.forEach(r=>{if(!r.deleted)s.add(year(r.date))});return [...s].sort((a,b)=>b-a)}
+function weeksOf(y){
+  const today=todayStr(),w=new Map();
+  recs.forEach(r=>{if(r.deleted)return;const m=mondayOf(r.date);if(year(m)!==y)return;
+    const e=w.get(m)||{start:m,cents:0,customers:0,days:0};e.cents+=r.cents;e.customers+=r.customers;e.days++;w.set(m,e)});
+  return [...w.values()].filter(e=>addDays(e.start,5)<today&&e.days>=4);
+}
+function monthData(y){
+  const a=Array.from({length:12},()=>({cents:0,customers:0,days:0}));
+  recs.forEach(r=>{if(r.deleted||year(r.date)!==y)return;const e=a[Number(r.date.slice(5,7))-1];e.cents+=r.cents;e.customers+=r.customers;e.days++});
+  return a;
+}
+function monthDone(y,i){const t=todayStr();const next=i===11?(y+1)+'-01-01':y+'-'+pad(i+2)+'-01';return next<=t}
+function yearSheet(){
+  const t=todayStr(),ty=year(t),map=new Map();
+  recs.forEach(r=>{if(r.deleted)return;const y=year(r.date);const e=map.get(y)||{cents:0,customers:0,days:0};e.cents+=r.cents;e.customers+=r.customers;e.days++;map.set(y,e)});
+  const ys=[...map.keys()].sort((a,b)=>b-a);
+  if(!ys.length)return '<section class="sheet"><h2>연도별 매상</h2><p class="small">매상을 입력하면 연도별 합계가 나옵니다.</p></section>';
+  const cut=lastYear(t);
+  const prior=y=>{let c=0,n=0;recs.forEach(r=>{if(!r.deleted&&year(r.date)===y-1&&(y!==ty||r.date<=cut)){c+=r.cents;n++}});return n?c:null};
+  const rows=ys.map(y=>{const e=map.get(y),p=prior(y),d=p===null?null:e.cents-p;
+    return '<tr><td style="font-weight:600">'+y+'<span class="sub">'+(y===ty?'진행 중':'')+'</span></td><td>'+usd(e.cents)+'<span class="sub">'+e.days+'일 입력</span></td><td>'+e.customers.toLocaleString('en-US')+'명</td>'
+      +(d===null?'<td class="blank">-</td>':'<td class="'+tone(d)+'">'+signed(d)+'<span class="sub">'+pct(e.cents,p)+'</span></td>')+'</tr>'}).join('');
+  const note=ys.includes(ty)&&prior(ty)!==null?'<p class="small">'+ty+'년은 '+(ty-1)+'년 같은 기간과 비교합니다.</p>':'';
+  return '<section class="sheet" id="yearSheet"><h2>연도별 매상</h2><table class="wk" aria-label="연도별 매상 합계"><thead><tr><th style="width:18%">연도</th><th style="width:30%">매상</th><th style="width:22%">손님</th><th style="width:30%">증감</th></tr></thead><tbody>'+rows+'</tbody></table>'+note+'</section>';
+}
+function statsView(){
+  const k=statKey;const fmt=v=>k==='customers'?v.toLocaleString('en-US')+'명':usd(v);const other=e=>k==='customers'?usd(e.cents):e.customers.toLocaleString('en-US')+'명';
+  const wk=weeksOf(statYear);let hi=null,lo=null;
+  wk.forEach(e=>{if(!hi||e[k]>hi[k])hi=e;if(!lo||e[k]<lo[k])lo=e});
+  const wbox=(t,e)=>'<div><p class="lab">'+t+'</p>'+(e?'<p class="num">'+fmt(e[k])+'</p><p class="cmp">'+md(e.start)+'~'+md(addDays(e.start,5))+' · '+other(e)+'</p>':'<p class="num blank">-</p><p class="cmp">자료 부족</p>')+'</div>';
+  const cur=monthData(statYear),prev=monthData(statYear-1);
+  const done=cur.map((e,i)=>({i,v:e[k],ok:monthDone(statYear,i)&&e.days>=15})).filter(x=>x.ok);
+  let mh=null,ml=null;done.forEach(x=>{if(mh===null||x.v>done[mh].v)mh=done.indexOf(x);if(ml===null||x.v<done[ml].v)ml=done.indexOf(x)});
+  const hiM=mh!==null?done[mh].i:-1,loM=ml!==null&&done.length>1?done[ml].i:-1;
+  const max=Math.max(1,...cur.map(e=>e[k]),...prev.map(e=>e[k]));
+  const today=todayStr();const curMonth=year(today)===statYear?Number(today.slice(5,7))-1:-1;
+  const bars=cur.map((e,i)=>{const p=prev[i];
+    const tag=i===hiM?' 최고':i===loM?' 최저':i===curMonth?' 진행 중':'';
+    return '<div class="bar"><span>'+(i+1)+'월</span><div class="trk"><div class="fil '+(i===hiM?'hi':i===loM?'lo':'')+'" style="width:'+(e[k]/max*100).toFixed(1)+'%"></div><div class="fil prev" style="width:'+(p[k]/max*100).toFixed(1)+'%"></div></div><span class="val">'+(e.days?fmt(e[k]):'-')+tag+'</span></div>'}).join('');
+  const tot=a=>a.reduce((t,e)=>t+e[k],0);
+  const opts=yearsWithData().map(y=>'<option value="'+y+'"'+(y===statYear?' selected':'')+'>'+y+'년</option>').join('');
+  return '<section class="sheet"><div class="row"><h2>분석</h2><select id="statYear" aria-label="연도" style="width:104px;height:36px;font-size:15px">'+opts+'</select></div>'
+   +'<div class="btns" style="margin-top:0;flex-wrap:nowrap;height:56px;align-items:center"><button type="button" class="tog" data-key="customers" aria-pressed="'+(k==='customers')+'">손님 수 기준</button><button type="button" class="tog" data-key="cents" aria-pressed="'+(k==='cents')+'">매상 기준</button></div>'
+   +'<div class="stats">'+wbox('가장 바쁜 주',hi)+wbox('가장 한가한 주',lo)+'</div>'
+   +'<p class="small">끝난 주 중 4일 이상 입력한 주만 비교합니다.</p><div class="gap"></div>'
+   +'<p style="font-weight:600">월별 비교</p>'+bars
+   +'<div class="key" style="line-height:28px"><span><i style="background:var(--bar)"></i>'+statYear+'년</span><span><i style="background:var(--bar-prev);height:4px;vertical-align:middle"></i>'+(statYear-1)+'년</span><span><i style="background:var(--hi)"></i>최고</span><span><i style="background:var(--lo)"></i>최저</span></div>'
+   +'<p class="small">'+statYear+'년 합계 '+fmt(tot(cur))+' · '+(statYear-1)+'년 합계 '+fmt(tot(prev))+'</p>'
+   +'<p class="small">최고와 최저는 끝난 달 중 15일 이상 입력한 달만 표시합니다.</p></section>'+yearSheet();
+}
+
+/* ---------- backup and merge ---------- */
+function when(iso){if(!iso)return '없음';const d=new Date(iso);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes())}
+const recText=r=>r.deleted?'삭제됨':usd(r.cents)+', '+r.customers+'명';
+function mergeCard(){
+  if(!merge)return '';
+  const unresolved=merge.conflicts.filter(c=>!c.pick).length;
+  const cs=merge.conflicts.map((c,i)=>'<div class="conflict"><div><b>'+esc(longDate(c.date))+'</b></div><div class="choice" role="group" aria-label="쓸 값 고르기"><button type="button" data-pick="mine" data-i="'+i+'" aria-pressed="'+(c.pick==='mine')+'">이 휴대폰<br>'+esc(recText(c.mine))+'<br><span style="font-weight:400">'+esc(c.mine.by||'이름 없음')+'</span></button><button type="button" data-pick="theirs" data-i="'+i+'" aria-pressed="'+(c.pick==='theirs')+'">받은 파일<br>'+esc(recText(c.theirs))+'<br><span style="font-weight:400">'+esc(c.theirs.by||'이름 없음')+'</span></button></div></div>').join('');
+  return '<section class="card" id="mergeCard"><h2>파일 합치기</h2><div class="stack"><p>새 기록 '+merge.add.length+'건 · 같은 기록 '+merge.same+'건 · 값이 다른 기록 '+merge.conflicts.length+'건</p>'
+   +(merge.bad.length?'<p class="err">읽지 못한 줄 '+merge.bad.length+'개는 건너뜁니다.</p>':'')
+   +cs+'<p class="err" id="mErr" role="alert" hidden></p><div class="btns"><button type="button" class="main" data-act="merge-go">'+(unresolved?'합치기 · '+unresolved+'건 남음':'합치기')+'</button><button type="button" data-act="merge-cancel">취소</button></div></div></section>';
+}
+async function runMerge(){
+  if(merge.conflicts.some(c=>!c.pick)){const e=$('mErr');e.textContent='값이 다른 날짜마다 쓸 값을 고르세요.';e.hidden=false;return}
+  await snapshot('합치기 전');
+  const put=[];
+  merge.add.forEach(r=>{put.push(r)});
+  merge.conflicts.forEach(c=>{
+    if(c.pick==='theirs')put.push({...c.theirs,rej:[...new Set([...(c.mine.rej||[]),sig(c.mine)])]});
+    else put.push({...c.mine,rej:[...new Set([...(c.mine.rej||[]),sig(c.theirs)])]});
+  });
+  await tx('records','readwrite',s=>{put.forEach(r=>s.put(r))});
+  put.forEach(r=>recs.set(r.date,r));
+  const n=merge.add.length+merge.conflicts.filter(c=>c.pick==='theirs').length;
+  merge=null;if(put.length)await changed();render();toast(n+'건을 합쳤습니다');
+}
+let snapList=[];
+function dataView(){
+  const count=[...recs.values()].filter(r=>!r.deleted).length;
+  const snaps=snapList.slice().reverse().map(s=>'<div><span>'+esc(when(s.at))+' · '+s.records.filter(r=>!r.deleted).length+'건'+(s.label?' · '+esc(s.label):'')+'</span><button type="button" class="mini" data-restore="'+s.id+'">되돌리기</button></div>').join('');
+  return mergeCard()
+   +'<section class="card"><h2>두 사람 기록 맞추기</h2><div class="stack"><ol class="how"><li>입력한 사람이 <b>기록 보내기</b>를 눌러 파일을 문자나 카톡으로 보냅니다.</li><li>받은 사람은 파일을 휴대폰에 저장합니다.</li><li>받은 사람이 <b>받은 파일 합치기</b>를 눌러 그 파일을 고릅니다.</li></ol><div class="btns"><button type="button" class="main" data-act="share">기록 보내기</button><button type="button" data-act="pick">받은 파일 합치기</button></div></div></section>'
+   +'<section class="card"><h2>백업</h2><div class="stack"><p class="note">기록 '+count+'건 · 마지막 백업 '+esc(when(cfg.lastBackupAt))+'</p><div class="btns"><button type="button" data-act="backup">휴대폰에 저장</button><button type="button" data-act="share">iCloud·구글 드라이브에 저장</button></div><p class="note">휴대폰 안에 저장한 파일은 휴대폰을 잃어버리면 함께 사라집니다. 가끔은 iCloud나 구글 드라이브에도 저장하세요. 새 휴대폰에서는 받은 파일 합치기로 백업 파일을 고르면 복원됩니다. 백업 파일은 엑셀에서도 열립니다.</p></div></section>'
+   +'<section class="card"><h2>자동 복사본</h2><div class="stack"><p class="note">하루 한 번 이 휴대폰 안에 최근 14개까지 보관합니다. 실수로 잘못 고쳤을 때 되돌리는 용도입니다.</p><div id="restoreAsk"></div>'+(snaps?'<div class="list">'+snaps+'</div>':'<p class="note">아직 복사본이 없습니다. 기록을 입력하면 다음에 앱을 열 때 만들어집니다.</p>')+'</div></section>'
+   +'<section class="card"><h2>내 이름</h2><form id="nameForm" class="stack" novalidate><label>입력자로 표시될 이름<input id="nameInput" autocomplete="off" maxlength="20" value="'+esc(cfg.name||'')+'"></label><p class="err" id="nameErr" role="alert" hidden></p><div class="btns"><button type="submit">이름 저장</button></div></form></section>';
+}
+async function handleFile(file){
+  if(!file)return;
+  if(file.size>5*1024*1024){toast('파일이 너무 큽니다. 백업 파일을 골라 주세요');return}
+  try{
+    const{list,bad}=parseBackup(await file.text());
+    if(!list.length){toast('읽을 수 있는 기록이 없습니다');return}
+    merge={...planMerge(list),bad};tab='data';await render();
+    const m=$('mergeCard');if(m)m.scrollIntoView({block:'start'});
+  }catch(e){toast('매상 노트 백업 파일이 아닙니다. 다른 파일을 골라 주세요')}
+}
+
+/* ---------- screen ---------- */
+async function render(){
+  $('who').textContent=cfg.name?cfg.name+' 입력 중':'';
+  document.querySelectorAll('#tabs button').forEach(b=>{if(b.dataset.tab===tab)b.setAttribute('aria-current','page');else b.removeAttribute('aria-current')});
+  renderBanners();
+  const v=$('view');
+  if(tab==='week'){v.innerHTML=formCard()+weekSheet();fillForm()}
+  else if(tab==='stats'){v.innerHTML=statsView()}
+  else{snapList=await tx('snapshots','readonly',s=>s.getAll());v.innerHTML=dataView()}
+}
+function welcome(){
+  $('tabs').hidden=true;
+  $('view').innerHTML='<section class="card"><h2>매상 노트 시작하기</h2><form id="firstForm" class="stack" novalidate><p class="note">매상과 손님 수를 작년 같은 요일과 비교합니다. 기록은 이 휴대폰에만 저장되고, 가입은 필요 없습니다.</p><label>입력자로 표시될 이름<input id="firstName" autocomplete="off" maxlength="20" placeholder="종호"></label><p class="err" id="firstErr" role="alert" hidden></p><button type="submit" class="main">시작하기</button></form></section>';
+}
+
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('button');
+  if(b&&b.dataset.tab){tab=b.dataset.tab;await render();scrollTo(0,0);return}
+  if(b&&b.dataset.key){statKey=b.dataset.key;render();return}
+  if(b&&b.dataset.pick){merge.conflicts[+b.dataset.i].pick=b.dataset.pick;render();return}
+  if(b&&b.dataset.restore){
+    const id=+b.dataset.restore;const s=snapList.find(x=>x.id===id);if(!s)return;
+    $('restoreAsk').innerHTML='<div class="confirm"><div>'+esc(when(s.at))+' 상태로 되돌릴까요? 지금 기록은 복사본으로 남겨 둡니다.</div><div class="btns"><button type="button" class="main" data-restore-yes="'+id+'">되돌리기</button><button type="button" data-act="restore-no">취소</button></div></div>';
+    $('restoreAsk').scrollIntoView({block:'nearest'});return}
+  if(b&&b.dataset.restoreYes){
+    const s=snapList.find(x=>x.id===+b.dataset.restoreYes);if(!s)return;
+    await snapshot('되돌리기 전');await replaceAll(s.records);await changed();await render();toast('되돌렸습니다');return}
+  const act=b&&b.dataset.act;
+  if(act){switch(act){
+    case 'wk-prev':weekStart=addDays(weekStart,-7);render();break;
+    case 'wk-next':weekStart=addDays(weekStart,7);render();break;
+    case 'wk-now':weekStart=mondayOf(todayStr());render();break;
+    case 'ow-yes':if(pendingConfirm){const p=pendingConfirm;pendingConfirm=null;commit(p.date,p.cents,p.customers)}break;
+    case 'ow-no':fillForm();break;
+    case 'del-ask':$('fConfirm').innerHTML='<div class="confirm"><div>'+esc(longDate(formDate))+' 기록을 삭제할까요?</div><div class="btns"><button type="button" class="danger" data-act="del-yes">삭제</button><button type="button" data-act="ow-no">취소</button></div></div>';break;
+    case 'del-yes':deleteRec(formDate);break;
+    case 'backup':await saveToPhone();if(tab==='data')render();break;
+    case 'share':await shareOut();if(tab==='data')render();break;
+    case 'pick':$('filePick').value='';$('filePick').click();break;
+    case 'backup-later':await setCfg('promptDay',todayStr());renderBanners();break;
+    case 'install-later':await setCfg('installDismissed',true);renderBanners();break;
+    case 'install':if(deferredInstall){deferredInstall.prompt();deferredInstall=null;renderBanners()}break;
+    case 'merge-go':runMerge();break;
+    case 'merge-cancel':merge=null;render();break;
+    case 'restore-no':$('restoreAsk').innerHTML='';break;
+  }return}
+  const tr=e.target.closest('tr[data-date]');
+  if(tr&&tr.dataset.date<=todayStr()){formDate=tr.dataset.date;fillForm();$('entry').scrollIntoView({block:'nearest'});$('fSales').focus()}
+});
+document.addEventListener('submit',async e=>{
+  e.preventDefault();
+  if(e.target.id==='entry')submitEntry();
+  if(e.target.id==='firstForm'){const n=cleanName($('firstName').value);if(!n){const x=$('firstErr');x.textContent='이름을 입력하세요.';x.hidden=false;return}await setCfg('name',n);$('tabs').hidden=false;render()}
+  if(e.target.id==='nameForm'){const n=cleanName($('nameInput').value);if(!n){const x=$('nameErr');x.textContent='이름을 입력하세요.';x.hidden=false;return}await setCfg('name',n);render();toast('이름을 저장했습니다')}
+});
+document.addEventListener('change',e=>{
+  if(e.target.id==='fDate'&&validDate(e.target.value)){formDate=e.target.value;fillForm()}
+  if(e.target.id==='statYear'){statYear=Number(e.target.value);render()}
+  if(e.target.id==='filePick')handleFile(e.target.files[0]);
+});
+document.addEventListener('input',e=>{if(e.target.id==='fSales'||e.target.id==='fCust'){const x=$('fErr');if(x)x.hidden=true}});
+
+let deferredInstall=null;
+addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(cfg.name)renderBanners()});
+if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+
+(async function start(){
+  try{
+    db=await openDB();await loadAll();
+    if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+    const snaps=await tx('snapshots','readonly',s=>s.getAll());
+    const last=snaps[snaps.length-1];
+    if(recs.size&&(!last||last.day!==todayStr()))await snapshot('자동');
+    if(!cfg.name)welcome();else render();
+  }catch(e){
+    $('view').innerHTML='<section class="card"><h2>기록을 열 수 없습니다</h2><p class="note">개인정보 보호 모드를 끄거나 홈 화면의 앱에서 다시 열어 보세요.</p></section>';
+  }
+})();
+</script>
+</body>
+</html>
