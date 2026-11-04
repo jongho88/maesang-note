@@ -67,6 +67,15 @@ table.wk{width:100%;border-collapse:collapse;table-layout:fixed;line-height:28px
 .neg{color:var(--down)}
 .wk.wkd .cu{color:var(--cust);font-weight:400;font-size:12px}
 .wk.wkd th.cu{font-weight:600}
+.wk.wkd td.dt{font-size:12px;color:var(--ink2);text-align:left}
+.wk.wkd td.dt b{color:var(--ink);font-size:13px}
+.wk.wkd td.tl{text-align:left}
+.wk.wkc th:first-child{text-align:right;padding-right:4px}
+.wk.wkd td.y2{padding-left:8px}
+.wk.wkd td.dt.today,.wk.wkd td.dt.today b{color:var(--pen);font-weight:600}
+.wk.wkd th{white-space:nowrap}
+@media (max-width:379px){.wk.wkd td,.wk.wkd th{padding:0 1px}.wk.wkd td.y2{padding-left:3px}.wk.wkd .tot td{font-size:12px}}
+@media (max-width:359px){.wk.wkd td{font-size:12px}.wk.wkd td.cu{font-size:11px}.wk.wkd .tot td{font-size:11px}}
 .seg{display:flex;gap:0;margin-bottom:10px}
 .seg button{flex:1;min-height:40px;border-radius:0}
 .seg button:first-child{border-radius:8px 0 0 8px}
@@ -93,7 +102,10 @@ button.tog[aria-pressed=true]{background:var(--pen-bg);color:#0C447C;border-colo
 .btns>button{flex:1 1 130px}
 .wkTotal{font-size:17px;font-weight:600;color:var(--pen);margin-right:auto;white-space:nowrap}
 .wkNav{display:flex;gap:6px}
-.wkNav>button{flex:0 0 auto;padding:0 8px}
+.wkNav>button{flex:0 0 auto;padding:0 10px;min-width:34px}
+.navrow{flex-wrap:nowrap}
+@media (max-width:379px){.pastT{display:none}}
+.wkBack{flex:none;white-space:nowrap;color:var(--pen);border-color:#85B7EB;background:var(--pen-bg);padding:0 8px}
 .note{font-size:13px;color:var(--ink2)}
 .err{font-size:14px;color:var(--down)}
 .confirm{background:var(--warn-bg);border:1px solid #EAD19A;border-radius:8px;padding:10px;color:var(--warn);font-size:14px;display:flex;flex-direction:column;gap:8px}
@@ -319,29 +331,24 @@ function weekSheet(){
   const y=year(days[0]),py=year(lastYear(days[0]));
   const a=days[0],z=addDays(weekStart,5);
   const m=summarize(days);
-  const lastYearText=(v,cur,base,fmt)=>m.both?'<span>'+py+'년 '+fmt(v)+' </span><span class="'+tone(cur-base)+'">'+pct(cur,base)+'</span>':py+'년 기록 없음';
-  const partial=m.both&&m.both<m.n;
   const cw=liveWeek(weekStart);const shown=cw?cw.cents:m.s;
   let rows='';
   days.forEach(d=>{
     const r=live(d),l=lastYear(d),p=live(l);
     const cu=x=>'<td class="cu">'+(x?x.customers+'명':'')+'</td>';
-    rows+='<tr data-date="'+d+'"><td class="'+(d===today?'today':'')+'"><b>'+DOW[dow(d)]+'</b><span class="mini dt">'+md(d)+'</span></td>'
-      +'<td class="'+(p?'':'blank')+'">'+(p?usd(p.cents):'-')+'</td>'+cu(p)
-      +'<td class="'+(r?'':'blank')+'">'+(r?usd(r.cents):(d>today||cw?'':'입력 전'))+'</td>'+cu(r)+'</tr>';
+    const dc=(x,cls)=>'<td class="dt'+cls+'"><b>'+DOW[dow(x)]+'</b> '+md(x)+'</td>';
+    rows+='<tr data-date="'+d+'">'+dc(d,d===today?' today':'')
+      +'<td class="'+(r?'':'blank')+'">'+(r?usd(r.cents):(d>today||cw?'':'입력 전'))+'</td>'+cu(r)
+      +dc(l,' y2')+'<td class="'+(p?'':'blank')+'">'+(p?usd(p.cents):'-')+'</td>'+cu(p)+'</tr>';
   });
   let fs=0,fc=0,fn=0;days.forEach(d=>{const p=live(lastYear(d));if(p){fs+=p.cents;fc+=p.customers;fn++}});
-  const pw=liveWeek(lastYear(weekStart));const doneWeek=addDays(weekStart,5)<today;
-  const twd=pw&&(cw||(doneWeek&&m.n))?shown-pw.cents:null;
+  const pw=liveWeek(lastYear(weekStart));
   const totC=(cents,cust,wk)=>'<td>'+usd(cents)+'</td><td class="cu">'+(wk?'주간':cust+'명')+'</td>';
-  rows+='<tr class="tot"><td>합계</td>'+(pw?totC(pw.cents,0,true):fn?totC(fs,fc,false):'<td>-</td><td class="cu"></td>')+(cw?totC(cw.cents,0,true):totC(m.s,m.c,false))+'</tr>';
+  rows+='<tr class="tot"><td class="tl">합계</td>'+(cw?totC(cw.cents,0,true):totC(m.s,m.c,false))+'<td class="tl y2">합계</td>'+(pw?totC(pw.cents,0,true):fn?totC(fs,fc,false):'<td>-</td><td class="cu"></td>')+'</tr>';
   const isNow=weekStart===mondayOf(today);
-  return '<section class="sheet"><div class="row"><h2 style="white-space:nowrap">'+(isNow?'이번 주':'지난 기록')+' 매상</h2><span class="wkTotal" id="weekTotal">'+usd(shown)+'</span><div class="wkNav"><button type="button" class="mini" data-act="wk-prev" aria-label="이전 주">이전</button>'+(isNow?'':'<button type="button" class="mini" data-act="wk-now">이번 주</button>')+'<button type="button" class="mini" data-act="wk-next" aria-label="다음 주">다음</button></div></div>'
+  return '<section class="sheet"><div class="row navrow">'+(isNow?'<h2 style="white-space:nowrap">이번 주 매상</h2>':'<h2 class="pastT" style="white-space:nowrap">지난 기록</h2>')+'<span class="wkTotal" id="weekTotal">'+usd(shown)+'</span><div class="wkNav"><button type="button" class="mini" data-act="wk-prev" aria-label="이전 주">&#9664;&#xFE0E;</button>'+(isNow?'':'<button type="button" class="mini wkBack" data-act="wk-now" aria-label="이번 주로 돌아가기">현재</button>')+'<button type="button" class="mini" data-act="wk-next" aria-label="다음 주">&#9654;&#xFE0E;</button></div></div>'
     +'<p class="small">'+y+'년 '+md(a)+'~'+md(z)+' · '+py+'년 '+md(lastYear(a))+'~'+md(lastYear(z))+'</p><div class="gap"></div>'
-    +'<table class="wk wkd" aria-label="요일별 '+py+'년과 '+y+'년 매상 비교"><thead><tr><th style="width:22%">날짜</th><th style="width:26%">'+py+'년</th><th class="cu" style="width:13%">손님</th><th style="width:26%">'+y+'년</th><th class="cu" style="width:13%">손님</th></tr></thead><tbody>'+rows+'</tbody></table><div class="gap"></div>'
-    +'<div class="stats"><div><p class="lab">'+y+'년 누적 매상</p><p class="num">'+usd(shown)+'</p><p class="cmp">'+(pw&&!(m.both&&!cw&&!doneWeek)?py+'년 주간 합계 '+usd(pw.cents)+(twd!==null?' <span class="'+tone(twd)+'">'+pct(shown,pw.cents)+'</span>':''):lastYearText(m.ps,m.ls,m.ps,usd))+'</p></div>'
-    +'<div><p class="lab">'+y+'년 누적 손님</p><p class="num">'+(m.n?m.c+'명':cw?'-':'0명')+'</p><p class="cmp">'+lastYearText(m.pc,m.lc,m.pc,v=>v+'명')+'</p></div></div>'
-    +(partial?'<p class="small">'+py+'년 기록이 있는 '+m.both+'일만 비교했습니다.</p>':'')
+    +'<table class="wk wkd wkc" aria-label="요일별 '+py+'년과 '+y+'년 매상 비교"><colgroup><col style="width:17%"><col style="width:22%"><col style="width:11%"><col style="width:17%"><col style="width:22%"><col style="width:11%"></colgroup><thead><tr><th colspan="2">'+y+'년</th><th class="cu">손님</th><th colspan="2">'+py+'년</th><th class="cu">손님</th></tr></thead><tbody>'+rows+'</tbody></table>'
     +'</section>';
 }
 function formCard(){
@@ -532,7 +539,7 @@ function expView(){
   const rows=list.map(x=>'<tr data-exp="'+esc(x.id)+'"><td>'+md(x.date)+'</td><td class="lft"><span class="ecat">'+esc(x.cat)+'</span>'+(x.memo?'<span class="mini">'+esc(x.memo)+'</span>':'')+'</td><td>'+usd(x.cents)+'</td></tr>').join('');
   const catRows=cats().map((c,i)=>'<div><input id="cat'+i+'" data-cat="'+i+'" value="'+esc(c)+'" maxlength="20" aria-label="항목 이름"><button type="button" class="mini danger" data-cat-del="'+i+'">빼기</button></div>').join('');
   return '<section class="card"><h2>'+(expEdit?'지출 고치기':'지출 입력')+'</h2><form id="expForm" class="stack" novalidate><div class="fields"><label class="wide">날짜<input id="eDate" type="date" max="'+todayStr()+'"></label><label>금액 ($)<input id="eAmt" inputmode="decimal" autocomplete="off" placeholder="1200.00"></label><label>항목<select id="eCat">'+opts+'</select></label><label class="wide">메모 (선택)<input id="eMemo" autocomplete="off" maxlength="60" placeholder="11월분"></label><button type="submit" class="main" style="align-self:end">'+(expEdit?'고치기':'저장')+'</button></div><p class="note" id="eInfo"></p><p class="err" id="eErr" role="alert" hidden></p><div id="eConfirm"></div>'+(expEdit?'<div class="btns"><button type="button" data-act="exp-cancel">취소</button><button type="button" class="danger" data-act="exp-del-ask">삭제</button></div>':'')+'</form></section>'
-   +'<section class="sheet" id="expSheet"><div class="row"><h2 style="white-space:nowrap">'+monthLabel(expMonth)+'</h2><span class="wkTotal" id="expTotal">'+usd(total)+'</span><div class="wkNav"><button type="button" class="mini" data-act="exp-prev">이전</button><button type="button" class="mini" data-act="exp-next">다음</button></div></div>'
+   +'<section class="sheet" id="expSheet"><div class="row navrow"><h2 style="white-space:nowrap">'+monthLabel(expMonth)+'</h2><span class="wkTotal" id="expTotal">'+usd(total)+'</span><div class="wkNav"><button type="button" class="mini" data-act="exp-prev" aria-label="이전 달">&#9664;&#xFE0E;</button><button type="button" class="mini" data-act="exp-next" aria-label="다음 달">&#9654;&#xFE0E;</button></div></div>'
    +(rows?'<table class="wk wkd exl" aria-label="지출 내역"><thead><tr><th style="width:17%">날짜</th><th class="lft" style="width:55%">항목</th><th style="width:28%">금액</th></tr></thead><tbody>'+rows+'</tbody></table><p class="small">줄을 누르면 고치거나 지울 수 있습니다.</p>':'<p class="small">이 달에 입력한 지출이 없습니다. 위에서 첫 지출을 넣어 보세요.</p>')+'</section>'
    +'<section class="card"><h2>항목 관리</h2><div class="stack"><div class="list catlist">'+catRows+'</div><p class="note">이름을 고치면 이미 입력한 지출의 항목 이름도 함께 바뀝니다. 항목을 빼도 이미 입력한 지출은 그대로 남습니다.</p><p class="err" id="catErr" role="alert" hidden></p><form id="catForm" class="btns" novalidate><input id="catNew" maxlength="20" placeholder="새 항목 이름" aria-label="새 항목 이름" style="flex:2 1 150px"><button type="submit">항목 추가</button></form></div></section>';
 }
