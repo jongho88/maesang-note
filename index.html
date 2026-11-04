@@ -144,21 +144,26 @@ const tone=v=>v>0?'up':v<0?'down':'';
 const cleanName=n=>String(n||'').replace(/^[=+\-@\s]+/,'').slice(0,20).trim();
 
 /* ---------- storage: IndexedDB on this phone only ---------- */
-let db,recs=new Map(),cfg={};
-function openDB(){return new Promise((ok,no)=>{const r=indexedDB.open('maesang-note',1);r.onupgradeneeded=()=>{const d=r.result;d.createObjectStore('records',{keyPath:'date'});d.createObjectStore('kv');d.createObjectStore('snapshots',{keyPath:'id',autoIncrement:true})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+let db,recs=new Map(),weeks=new Map(),cfg={};
+function openDB(){return new Promise((ok,no)=>{const r=indexedDB.open('maesang-note',2);r.onupgradeneeded=()=>{const d=r.result;const has=n=>d.objectStoreNames.contains(n);if(!has('records'))d.createObjectStore('records',{keyPath:'date'});if(!has('kv'))d.createObjectStore('kv');if(!has('snapshots'))d.createObjectStore('snapshots',{keyPath:'id',autoIncrement:true});if(!has('weeks'))d.createObjectStore('weeks',{keyPath:'date'})};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
 function tx(store,mode,fn){return new Promise((ok,no)=>{const t=db.transaction(store,mode);const s=t.objectStore(store);let out;const q=fn(s);if(q)q.onsuccess=()=>{out=q.result};t.oncomplete=()=>ok(out);t.onerror=()=>no(t.error);t.onabort=()=>no(t.error)})}
 const putRec=r=>tx('records','readwrite',s=>s.put(r));
 const setCfg=(k,v)=>{cfg[k]=v;return tx('kv','readwrite',s=>s.put(v,k))};
 async function loadAll(){
   const list=await tx('records','readonly',s=>s.getAll());recs=new Map(list.map(r=>[r.date,r]));
+  const wl=await tx('weeks','readonly',s=>s.getAll());weeks=new Map(wl.map(w=>[w.date,w]));
   const keys=await tx('kv','readonly',s=>s.getAllKeys());const vals=await tx('kv','readonly',s=>s.getAll());
   cfg={};keys.forEach((k,i)=>cfg[k]=vals[i]);
 }
-async function replaceAll(list){await tx('records','readwrite',s=>{s.clear();list.forEach(r=>s.put(r))});recs=new Map(list.map(r=>[r.date,r]))}
+async function replaceAll(list,wl){await tx('records','readwrite',s=>{s.clear();list.forEach(r=>s.put(r))});recs=new Map(list.map(r=>[r.date,r]));
+  await tx('weeks','readwrite',s=>{s.clear();wl.forEach(r=>s.put(r))});weeks=new Map(wl.map(r=>[r.date,r]))}
 const live=d=>{const r=recs.get(d);return r&&!r.deleted?r:null};
+const liveWeek=s=>{const w=weeks.get(s);return w&&!w.deleted?w:null};
+const covered=d=>!!liveWeek(mondayOf(d));
+const liveWeeks=()=>[...weeks.values()].filter(w=>!w.deleted);
 async function snapshot(label){
-  const list=[...recs.values()];if(!list.length)return;
-  await tx('snapshots','readwrite',s=>s.add({at:new Date().toISOString(),day:todayStr(),label,records:list}));
+  const list=[...recs.values()],wl=[...weeks.values()];if(!list.length&&!wl.length)return;
+  await tx('snapshots','readwrite',s=>s.add({at:new Date().toISOString(),day:todayStr(),label,records:list,weeks:wl}));
   const all=await tx('snapshots','readonly',s=>s.getAll());
   if(all.length>14){const old=all.slice(0,all.length-14);await tx('snapshots','readwrite',s=>{old.forEach(o=>s.delete(o.id))})}
 }
@@ -167,8 +172,9 @@ async function changed(){await setCfg('lastChangeAt',new Date().toISOString())}
 /* ---------- backup file: a CSV that Excel can open and this app can read back ---------- */
 function csvCell(v){v=String(v==null?'':v);return /[",\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v}
 function toCSV(){
-  const rows=[['날짜','요일','매상','손님','입력자','수정시각','상태']];
-  [...recs.values()].sort((a,b)=>a.date<b.date?-1:1).forEach(r=>rows.push([r.date,DOW[dow(r.date)],(r.cents/100).toFixed(2),r.customers,r.by||'',r.updatedAt||'',r.deleted?'삭제':'']));
+  const rows=[['날짜','요일','매상','손님','입력자','수정시각','상태','종류','종료일','귀속연도']];
+  [...recs.values()].sort((a,b)=>a.date<b.date?-1:1).forEach(r=>rows.push([r.date,DOW[dow(r.date)],(r.cents/100).toFixed(2),r.customers,r.by||'',r.updatedAt||'',r.deleted?'삭제':'','','','']));
+  [...weeks.values()].sort((a,b)=>a.date<b.date?-1:1).forEach(w=>rows.push([w.date,DOW[dow(w.date)],(w.cents/100).toFixed(2),'',w.by||'',w.updatedAt||'',w.deleted?'삭제':'','주간',w.end,w.year]));
   return '﻿'+rows.map(x=>x.map(csvCell).join(',')).join('\r\n')+'\r\n';
 }
 function parseCSVRows(t){
@@ -190,27 +196,34 @@ function parseBackup(text){
   const rows=parseCSVRows(text);if(rows.length<1)throw new Error('empty');
   const h=rows[0].map(x=>x.trim());const col=n=>h.indexOf(n);
   if(col('날짜')<0||col('매상')<0||col('손님')<0)throw new Error('format');
-  const list=[],bad=[];
+  const list=[],wlist=[],bad=[];
   rows.slice(1).forEach((r,i)=>{
     const date=normDate(r[col('날짜')]||'');const cents=parseMoney(r[col('매상')]||'');const cust=String(r[col('손님')]||'').trim();
+    if(col('종류')>=0&&(r[col('종류')]||'').trim()==='주간'){
+      const end=normDate(r[col('종료일')]||'');const y=Number((r[col('귀속연도')]||'').trim());
+      if(!date||cents===null||!end||end<date||!Number.isInteger(y)||y<1900||y>2200||dow(date)!==1){bad.push(i+2);return}
+      const at=r[col('수정시각')]||'';
+      wlist.push({date,end,year:y,cents,customers:0,by:cleanName(r[col('입력자')]),updatedAt:isNaN(Date.parse(at))?'':at,deleted:(r[col('상태')]||'').trim()==='삭제',rej:[]});
+      return;
+    }
     if(!date||cents===null||!/^\d{1,6}$/.test(cust)){bad.push(i+2);return}
     const at=r[col('수정시각')]||'';
     list.push({date,cents,customers:Number(cust),by:cleanName(r[col('입력자')]),updatedAt:isNaN(Date.parse(at))?'':at,deleted:(r[col('상태')]||'').trim()==='삭제',rej:[]});
   });
-  return{list,bad};
+  return{list,wlist,bad};
 }
 const sig=r=>r.deleted?'deleted':r.cents+'|'+r.customers;
-function planMerge(list){
-  const add=[],conflicts=[];let same=0;
-  const seen=new Set();
-  list.forEach(n=>{if(seen.has(n.date))return;seen.add(n.date);
-    const l=recs.get(n.date);
-    if(!l){add.push(n);return}
+function planMerge(list,wlist){
+  const add=[],addW=[],conflicts=[];let same=0;
+  const plan=(items,store,out,kind)=>{const seen=new Set();items.forEach(n=>{if(seen.has(n.date))return;seen.add(n.date);
+    const l=store.get(n.date);
+    if(!l){out.push(n);return}
     if(sig(l)===sig(n)){same++;return}
     if((l.rej||[]).includes(sig(n))){same++;return}
-    conflicts.push({date:n.date,mine:l,theirs:n,pick:null});
-  });
-  return{add,conflicts,same};
+    conflicts.push({kind,date:n.date,mine:l,theirs:n,pick:null});
+  })};
+  plan(list,recs,add,'day');plan(wlist,weeks,addW,'week');
+  return{add,addW,conflicts,same};
 }
 const fileName=()=>'maesang-backup-'+todayStr()+'.csv';
 function makeFile(){return new File([toCSV()],fileName(),{type:'text/csv'})}
@@ -243,7 +256,7 @@ function renderBanners(){
   if(!standalone&&!cfg.installDismissed&&(isIOS||deferredInstall)){
     h+='<div class="banner"><div>'+(isIOS?'Safari 아래쪽의 공유 버튼을 누르고 <b>홈 화면에 추가</b>를 고르세요. 기록은 꼭 홈 화면의 앱에서 입력하세요. Safari에서 입력한 기록은 앱으로 옮겨지지 않습니다.':'홈 화면에 추가해 두면 앱처럼 열 수 있고 기록도 더 안전합니다.')+'</div><div class="btns">'+(deferredInstall?'<button type="button" class="main" data-act="install">홈 화면에 추가</button>':'')+'<button type="button" data-act="install-later">닫기</button></div></div>';
   }
-  const dirty=recs.size&&(!cfg.lastBackupAt||(cfg.lastChangeAt&&cfg.lastChangeAt>cfg.lastBackupAt));
+  const dirty=(recs.size||weeks.size)&&(!cfg.lastBackupAt||(cfg.lastChangeAt&&cfg.lastChangeAt>cfg.lastBackupAt));
   if(dirty&&cfg.promptDay!==todayStr()&&cfg.name){
     h+='<div class="banner"><div>지난 백업 뒤로 바뀐 기록이 있습니다. 오늘 백업할까요?</div><div class="btns"><button type="button" class="main" data-act="backup">지금 백업</button><button type="button" data-act="backup-later">나중에</button></div></div>';
   }
@@ -280,12 +293,14 @@ function weekSheet(){
       +(diff!==null?'<td class="'+tone(diff)+'">'+signed(diff)+'<span class="sub">'+pct(r.cents,p.cents)+'</span></td>':'<td class="blank">-</td>')+'</tr>';
   });
   let fs=0,fc=0,fn=0;days.forEach(d=>{const p=live(lastYear(d));if(p){fs+=p.cents;fc+=p.customers;fn++}});
-  rows+='<tr class="tot"><td>합계</td><td>'+usd(fs)+'<span class="sub">'+fn+'일 · '+fc+'명</span></td><td>'+usd(m.s)+'<span class="sub">'+m.n+'일 · '+m.c+'명</span></td><td></td></tr>';
+  const pw=fn?null:liveWeek(lastYear(weekStart));const doneWeek=addDays(weekStart,5)<today;
+  const twd=pw&&doneWeek&&m.n?m.s-pw.cents:null;
+  rows+='<tr class="tot"><td>합계</td>'+(pw?'<td>'+usd(pw.cents)+'<span class="sub">주간 합계</span></td>':'<td>'+usd(fs)+'<span class="sub">'+fn+'일 · '+fc+'명</span></td>')+'<td>'+usd(m.s)+'<span class="sub">'+m.n+'일 · '+m.c+'명</span></td>'+(twd!==null?'<td class="'+tone(twd)+'">'+signed(twd)+'<span class="sub">'+pct(m.s,pw.cents)+'</span></td>':'<td></td>')+'</tr>';
   const isNow=weekStart===mondayOf(today);
   return '<section class="sheet"><div class="row"><h2 style="white-space:nowrap">'+(isNow?'이번 주':'지난 기록')+' 매상</h2><span class="wkTotal" id="weekTotal">'+usd(m.s)+'</span><div class="wkNav"><button type="button" class="mini" data-act="wk-prev" aria-label="이전 주">이전</button>'+(isNow?'':'<button type="button" class="mini" data-act="wk-now">이번 주</button>')+'<button type="button" class="mini" data-act="wk-next" aria-label="다음 주">다음</button></div></div>'
     +'<p class="small">'+y+'년 '+md(a)+'~'+md(z)+' · '+py+'년 '+md(lastYear(a))+'~'+md(lastYear(z))+'</p><div class="gap"></div>'
     +'<table class="wk" aria-label="요일별 '+py+'년과 '+y+'년 매상 비교"><thead><tr><th style="width:12%">요일</th><th style="width:30%">'+py+'년</th><th style="width:30%">'+y+'년</th><th style="width:28%">증감</th></tr></thead><tbody>'+rows+'</tbody></table><div class="gap"></div>'
-    +'<div class="stats"><div><p class="lab">'+y+'년 누적 매상</p><p class="num">'+usd(m.s)+'</p><p class="cmp">'+lastYearText(m.ps,m.ls,m.ps,usd)+'</p></div>'
+    +'<div class="stats"><div><p class="lab">'+y+'년 누적 매상</p><p class="num">'+usd(m.s)+'</p><p class="cmp">'+(pw?py+'년 주간 합계 '+usd(pw.cents)+(twd!==null?' <span class="'+tone(twd)+'">'+pct(m.s,pw.cents)+'</span>':''):lastYearText(m.ps,m.ls,m.ps,usd))+'</p></div>'
     +'<div><p class="lab">'+y+'년 누적 손님</p><p class="num">'+m.c+'명</p><p class="cmp">'+lastYearText(m.pc,m.lc,m.pc,v=>v+'명')+'</p></div></div>'
     +(partial?'<p class="small">'+py+'년 기록이 있는 '+m.both+'일만 비교했습니다.</p>':'')
     +'</section>';
@@ -334,90 +349,111 @@ async function deleteRec(date){
 }
 
 /* ---------- analysis ---------- */
-function yearsWithData(){const s=new Set([year(todayStr())]);recs.forEach(r=>{if(!r.deleted)s.add(year(r.date))});return [...s].sort((a,b)=>b-a)}
+function yearsWithData(){const s=new Set([year(todayStr())]);recs.forEach(r=>{if(!r.deleted)s.add(year(r.date))});liveWeeks().forEach(w=>s.add(w.year));return [...s].sort((a,b)=>b-a)}
 function weeksOf(y){
   const today=todayStr(),w=new Map();
   recs.forEach(r=>{if(r.deleted)return;const m=mondayOf(r.date);if(year(m)!==y)return;
-    const e=w.get(m)||{start:m,cents:0,customers:0,days:0};e.cents+=r.cents;e.customers+=r.customers;e.days++;w.set(m,e)});
-  return [...w.values()].filter(e=>addDays(e.start,5)<today&&e.days>=4);
+    if(liveWeek(m)&&liveWeek(m).year!==y)return;
+    const e=w.get(m)||{start:m,end:addDays(m,5),cents:0,customers:0,days:0};e.cents+=r.cents;e.customers+=r.customers;e.days++;w.set(m,e)});
+  const done=[...w.values()].filter(e=>addDays(e.start,5)<today&&e.days>=4);
+  const out=done.map(e=>({...e,hasCust:true}));
+  liveWeeks().forEach(k=>{if(k.year!==y||(toUTC(k.end)-toUTC(k.date))/864e5<4)return;
+    const i=out.findIndex(e=>e.start===k.date);
+    if(i>=0)out[i]={...out[i],cents:k.cents,end:k.end};else out.push({start:k.date,end:k.end,cents:k.cents,customers:0,days:6,hasCust:false})});
+  return out;
 }
 function monthData(y){
-  const a=Array.from({length:12},()=>({cents:0,customers:0,days:0}));
-  recs.forEach(r=>{if(r.deleted||year(r.date)!==y)return;const e=a[Number(r.date.slice(5,7))-1];e.cents+=r.cents;e.customers+=r.customers;e.days++});
+  const a=Array.from({length:12},()=>({cents:0,customers:0,days:0,cdays:0}));
+  recs.forEach(r=>{if(r.deleted||year(r.date)!==y)return;const e=a[Number(r.date.slice(5,7))-1];e.customers+=r.customers;e.cdays++;if(!covered(r.date)){e.cents+=r.cents;e.days++}});
+  liveWeeks().forEach(w=>{if(w.year!==y)return;const ey=year(w.end);const i=ey===y?Number(w.end.slice(5,7))-1:ey>y?11:0;a[i].cents+=w.cents;a[i].days+=6});
   return a;
 }
 function monthDone(y,i){const t=todayStr();const next=i===11?(y+1)+'-01-01':y+'-'+pad(i+2)+'-01';return next<=t}
 function yearSheet(){
   const t=todayStr(),ty=year(t),map=new Map();
-  recs.forEach(r=>{if(r.deleted)return;const y=year(r.date);const e=map.get(y)||{cents:0,customers:0,days:0};e.cents+=r.cents;e.customers+=r.customers;e.days++;map.set(y,e)});
+  const get=y=>{if(!map.has(y))map.set(y,{cents:0,customers:0,days:0,cdays:0,wks:0});return map.get(y)};
+  recs.forEach(r=>{if(r.deleted)return;const e=get(year(r.date));e.customers+=r.customers;e.cdays++;if(!covered(r.date)){e.cents+=r.cents;e.days++}});
+  liveWeeks().forEach(w=>{const e=get(w.year);e.cents+=w.cents;e.wks++});
   const ys=[...map.keys()].sort((a,b)=>b-a);
   if(!ys.length)return '<section class="sheet"><h2>연도별 매상</h2><p class="small">매상을 입력하면 연도별 합계가 나옵니다.</p></section>';
-  const cut=lastYear(t);
-  const prior=y=>{let c=0,n=0;recs.forEach(r=>{if(!r.deleted&&year(r.date)===y-1&&(y!==ty||r.date<=cut)){c+=r.cents;n++}});return n?c:null};
-  const rows=ys.map(y=>{const e=map.get(y),p=prior(y),d=p===null?null:e.cents-p;
-    return '<tr><td style="font-weight:600">'+y+'<span class="sub">'+(y===ty?'진행 중':'')+'</span></td><td>'+usd(e.cents)+'<span class="sub">'+e.days+'일 입력</span></td><td>'+e.customers.toLocaleString('en-US')+'명</td>'
-      +(d===null?'<td class="blank">-</td>':'<td class="'+tone(d)+'">'+signed(d)+'<span class="sub">'+pct(e.cents,p)+'</span></td>')+'</tr>'}).join('');
-  const note=ys.includes(ty)&&prior(ty)!==null?'<p class="small">'+ty+'년은 '+(ty-1)+'년 같은 기간과 비교합니다.</p>':'';
+  const matched=y=>{const mon=new Map();recs.forEach(r=>{if(r.deleted||year(r.date)!==y)return;const m=mondayOf(r.date);if(!mon.has(m))mon.set(m,[]);mon.get(m).push(r)});
+    let cur=0,pre=0,n=0;
+    mon.forEach((rs,m)=>{const pw=liveWeek(lastYear(m));
+      if(pw&&addDays(m,5)<t){rs.forEach(r=>{cur+=r.cents});pre+=pw.cents;n++;return}
+      rs.forEach(r=>{const p=live(lastYear(r.date));if(p){cur+=r.cents;pre+=p.cents;n++}})});
+    liveWeeks().forEach(w=>{if(w.year===y){const pw=liveWeek(lastYear(w.date));if(pw){cur+=w.cents;pre+=pw.cents;n++}}});
+    return n?{cur,pre}:null};
+  const rows=ys.map(y=>{const e=map.get(y),prevE=map.get(y-1);let cmp=null;
+    if(y===ty)cmp=matched(y);
+    else if(prevE&&prevE.cents)cmp={cur:e.cents,pre:prevE.cents};
+    const d=cmp?cmp.cur-cmp.pre:null;
+    const sub=[e.wks?e.wks+'주':'',e.days?e.days+'일 입력':''].filter(Boolean).join(' · ');
+    return '<tr><td style="font-weight:600">'+y+'<span class="sub">'+(y===ty?'진행 중':'')+'</span></td><td>'+usd(e.cents)+'<span class="sub">'+sub+'</span></td><td>'+(e.cdays?e.customers.toLocaleString('en-US')+'명':'-')+'</td>'
+      +(d===null?'<td class="blank">-</td>':'<td class="'+tone(d)+'">'+signed(d)+'<span class="sub">'+pct(cmp.cur,cmp.pre)+'</span></td>')+'</tr>'}).join('');
+  const note=ys.includes(ty)&&matched(ty)?'<p class="small">'+ty+'년은 입력한 주를 '+(ty-1)+'년 같은 주와 비교합니다.</p>':'';
   return '<section class="sheet" id="yearSheet"><h2>연도별 매상</h2><table class="wk" aria-label="연도별 매상 합계"><thead><tr><th style="width:18%">연도</th><th style="width:30%">매상</th><th style="width:22%">손님</th><th style="width:30%">증감</th></tr></thead><tbody>'+rows+'</tbody></table>'+note+'</section>';
 }
 function statsView(){
   const k=statKey;const fmt=v=>k==='customers'?v.toLocaleString('en-US')+'명':usd(v);const other=e=>k==='customers'?usd(e.cents):e.customers.toLocaleString('en-US')+'명';
   const wk=weeksOf(statYear);let hi=null,lo=null;
-  wk.forEach(e=>{if(!hi||e[k]>hi[k])hi=e;if(!lo||e[k]<lo[k])lo=e});
-  const wbox=(t,e)=>'<div><p class="lab">'+t+'</p>'+(e?'<p class="num">'+fmt(e[k])+'</p><p class="cmp">'+md(e.start)+'~'+md(addDays(e.start,5))+' · '+other(e)+'</p>':'<p class="num blank">-</p><p class="cmp">자료 부족</p>')+'</div>';
+  wk.filter(e=>k==='cents'||e.hasCust).forEach(e=>{if(!hi||e[k]>hi[k])hi=e;if(!lo||e[k]<lo[k])lo=e});
+  if(hi===lo)lo=null;
+  const wbox=(t,e)=>'<div><p class="lab">'+t+'</p>'+(e?'<p class="num">'+fmt(e[k])+'</p><p class="cmp">'+md(e.start)+'~'+md(e.end)+(k==='cents'&&!e.hasCust?'':' · '+other(e))+'</p>':'<p class="num blank">-</p><p class="cmp">자료 부족</p>')+'</div>';
   const cur=monthData(statYear),prev=monthData(statYear-1);
-  const done=cur.map((e,i)=>({i,v:e[k],ok:monthDone(statYear,i)&&e.days>=15})).filter(x=>x.ok);
+  const done=cur.map((e,i)=>({i,v:e[k],ok:monthDone(statYear,i)&&(k==='cents'?e.days:e.cdays)>=15})).filter(x=>x.ok);
   let mh=null,ml=null;done.forEach(x=>{if(mh===null||x.v>done[mh].v)mh=done.indexOf(x);if(ml===null||x.v<done[ml].v)ml=done.indexOf(x)});
   const hiM=mh!==null?done[mh].i:-1,loM=ml!==null&&done.length>1?done[ml].i:-1;
   const max=Math.max(1,...cur.map(e=>e[k]),...prev.map(e=>e[k]));
   const today=todayStr();const curMonth=year(today)===statYear?Number(today.slice(5,7))-1:-1;
   const bars=cur.map((e,i)=>{const p=prev[i];
     const tag=i===hiM?' 최고':i===loM?' 최저':i===curMonth?' 진행 중':'';
-    return '<div class="bar"><span>'+(i+1)+'월</span><div class="trk"><div class="fil '+(i===hiM?'hi':i===loM?'lo':'')+'" style="width:'+(e[k]/max*100).toFixed(1)+'%"></div><div class="fil prev" style="width:'+(p[k]/max*100).toFixed(1)+'%"></div></div><span class="val">'+(e.days?fmt(e[k]):'-')+tag+'</span></div>'}).join('');
-  const tot=a=>a.reduce((t,e)=>t+e[k],0);
+    return '<div class="bar"><span>'+(i+1)+'월</span><div class="trk"><div class="fil '+(i===hiM?'hi':i===loM?'lo':'')+'" style="width:'+(e[k]/max*100).toFixed(1)+'%"></div><div class="fil prev" style="width:'+(p[k]/max*100).toFixed(1)+'%"></div></div><span class="val">'+((k==='cents'?e.days:e.cdays)?fmt(e[k]):'-')+tag+'</span></div>'}).join('');
+  const tot=a=>a.some(e=>k==='cents'?e.days:e.cdays)?fmt(a.reduce((t,e)=>t+e[k],0)):'-';
   const opts=yearsWithData().map(y=>'<option value="'+y+'"'+(y===statYear?' selected':'')+'>'+y+'년</option>').join('');
   return '<section class="sheet"><div class="row"><h2>분석</h2><select id="statYear" aria-label="연도" style="width:104px;height:36px;font-size:15px">'+opts+'</select></div>'
    +'<div class="btns" style="margin-top:0;flex-wrap:nowrap;height:56px;align-items:center"><button type="button" class="tog" data-key="customers" aria-pressed="'+(k==='customers')+'">손님 수 기준</button><button type="button" class="tog" data-key="cents" aria-pressed="'+(k==='cents')+'">매상 기준</button></div>'
    +'<div class="stats">'+wbox('가장 바쁜 주',hi)+wbox('가장 한가한 주',lo)+'</div>'
-   +'<p class="small">끝난 주 중 4일 이상 입력한 주만 비교합니다.</p><div class="gap"></div>'
+   +'<p class="small">끝난 주 중 4일 이상 입력한 주와 주간 기록을 비교합니다.</p><p class="small">손님 수 기준에는 주간 기록이 빠집니다. 며칠 안 되는 연말 주도 빠집니다.</p><div class="gap"></div>'
    +'<p style="font-weight:600">월별 비교</p>'+bars
    +'<div class="key" style="line-height:28px"><span><i style="background:var(--bar)"></i>'+statYear+'년</span><span><i style="background:var(--bar-prev);height:4px;vertical-align:middle"></i>'+(statYear-1)+'년</span><span><i style="background:var(--hi)"></i>최고</span><span><i style="background:var(--lo)"></i>최저</span></div>'
-   +'<p class="small">'+statYear+'년 합계 '+fmt(tot(cur))+' · '+(statYear-1)+'년 합계 '+fmt(tot(prev))+'</p>'
-   +'<p class="small">최고와 최저는 끝난 달 중 15일 이상 입력한 달만 표시합니다.</p></section>'+yearSheet();
+   +'<p class="small">'+statYear+'년 합계 '+tot(cur)+' · '+(statYear-1)+'년 합계 '+tot(prev)+'</p>'
+   +'<p class="small">주간 기록은 그 주 토요일이 속한 달로 계산합니다. 최고와 최저는 끝난 달 중 15일 이상 입력한 달만 표시합니다.</p></section>'+yearSheet();
 }
 
 /* ---------- backup and merge ---------- */
 function when(iso){if(!iso)return '없음';const d=new Date(iso);return d.getFullYear()+'/'+(d.getMonth()+1)+'/'+d.getDate()+' '+pad(d.getHours())+':'+pad(d.getMinutes())}
-const recText=r=>r.deleted?'삭제됨':usd(r.cents)+', '+r.customers+'명';
+const recText=(r,kind)=>r.deleted?'삭제됨':kind==='week'?usd(r.cents):usd(r.cents)+', '+r.customers+'명';
+const weekRange=w=>year(w.date)+'/'+md(w.date)+'~'+md(w.end)+' 주간';
 function mergeCard(){
   if(!merge)return '';
   const unresolved=merge.conflicts.filter(c=>!c.pick).length;
-  const cs=merge.conflicts.map((c,i)=>'<div class="conflict"><div><b>'+esc(longDate(c.date))+'</b></div><div class="choice" role="group" aria-label="쓸 값 고르기"><button type="button" data-pick="mine" data-i="'+i+'" aria-pressed="'+(c.pick==='mine')+'">이 휴대폰<br>'+esc(recText(c.mine))+'<br><span style="font-weight:400">'+esc(c.mine.by||'이름 없음')+'</span></button><button type="button" data-pick="theirs" data-i="'+i+'" aria-pressed="'+(c.pick==='theirs')+'">받은 파일<br>'+esc(recText(c.theirs))+'<br><span style="font-weight:400">'+esc(c.theirs.by||'이름 없음')+'</span></button></div></div>').join('');
-  return '<section class="card" id="mergeCard"><h2>파일 합치기</h2><div class="stack"><p>새 기록 '+merge.add.length+'건 · 같은 기록 '+merge.same+'건 · 값이 다른 기록 '+merge.conflicts.length+'건</p>'
+  const cs=merge.conflicts.map((c,i)=>'<div class="conflict"><div><b>'+esc(c.kind==='week'?weekRange(c.mine):longDate(c.date))+'</b></div><div class="choice" role="group" aria-label="쓸 값 고르기"><button type="button" data-pick="mine" data-i="'+i+'" aria-pressed="'+(c.pick==='mine')+'">이 휴대폰<br>'+esc(recText(c.mine,c.kind))+'<br><span style="font-weight:400">'+esc(c.mine.by||'이름 없음')+'</span></button><button type="button" data-pick="theirs" data-i="'+i+'" aria-pressed="'+(c.pick==='theirs')+'">받은 파일<br>'+esc(recText(c.theirs,c.kind))+'<br><span style="font-weight:400">'+esc(c.theirs.by||'이름 없음')+'</span></button></div></div>').join('');
+  return '<section class="card" id="mergeCard"><h2>파일 합치기</h2><div class="stack"><p>새 기록 '+merge.add.length+'건 · 주간 기록 '+merge.addW.length+'건 · 같은 기록 '+merge.same+'건 · 값이 다른 기록 '+merge.conflicts.length+'건</p>'
    +(merge.bad.length?'<p class="err">읽지 못한 줄 '+merge.bad.length+'개는 건너뜁니다.</p>':'')
    +cs+'<p class="err" id="mErr" role="alert" hidden></p><div class="btns"><button type="button" class="main" data-act="merge-go">'+(unresolved?'합치기 · '+unresolved+'건 남음':'합치기')+'</button><button type="button" data-act="merge-cancel">취소</button></div></div></section>';
 }
 async function runMerge(){
   if(merge.conflicts.some(c=>!c.pick)){const e=$('mErr');e.textContent='값이 다른 날짜마다 쓸 값을 고르세요.';e.hidden=false;return}
   await snapshot('합치기 전');
-  const put=[];
-  merge.add.forEach(r=>{put.push(r)});
+  const put=[...merge.add],putW=[...merge.addW];
   merge.conflicts.forEach(c=>{
-    if(c.pick==='theirs')put.push({...c.theirs,rej:[...new Set([...(c.mine.rej||[]),sig(c.mine)])]});
-    else put.push({...c.mine,rej:[...new Set([...(c.mine.rej||[]),sig(c.theirs)])]});
+    const out=c.kind==='week'?putW:put;
+    if(c.pick==='theirs')out.push({...c.theirs,rej:[...new Set([...(c.mine.rej||[]),sig(c.mine)])]});
+    else out.push({...c.mine,rej:[...new Set([...(c.mine.rej||[]),sig(c.theirs)])]});
   });
   await tx('records','readwrite',s=>{put.forEach(r=>s.put(r))});
-  put.forEach(r=>recs.set(r.date,r));
-  const n=merge.add.length+merge.conflicts.filter(c=>c.pick==='theirs').length;
-  merge=null;if(put.length)await changed();render();toast(n+'건을 합쳤습니다');
+  await tx('weeks','readwrite',s=>{putW.forEach(r=>s.put(r))});
+  put.forEach(r=>recs.set(r.date,r));putW.forEach(r=>weeks.set(r.date,r));
+  const n=merge.add.length+merge.addW.length+merge.conflicts.filter(c=>c.pick==='theirs').length;
+  merge=null;if(put.length||putW.length)await changed();render();toast(n+'건을 합쳤습니다');
 }
 let snapList=[];
 function dataView(){
   const count=[...recs.values()].filter(r=>!r.deleted).length;
-  const snaps=snapList.slice().reverse().map(s=>'<div><span>'+esc(when(s.at))+' · '+s.records.filter(r=>!r.deleted).length+'건'+(s.label?' · '+esc(s.label):'')+'</span><button type="button" class="mini" data-restore="'+s.id+'">되돌리기</button></div>').join('');
+  const snaps=snapList.slice().reverse().map(s=>'<div><span>'+esc(when(s.at))+' · '+(s.records.filter(r=>!r.deleted).length+(s.weeks||[]).filter(w=>!w.deleted).length)+'건'+(s.label?' · '+esc(s.label):'')+'</span><button type="button" class="mini" data-restore="'+s.id+'">되돌리기</button></div>').join('');
   return mergeCard()
    +'<section class="card"><h2>두 사람 기록 맞추기</h2><div class="stack"><ol class="how"><li>입력한 사람이 <b>기록 보내기</b>를 눌러 파일을 문자나 카톡으로 보냅니다.</li><li>받은 사람은 파일을 휴대폰에 저장합니다.</li><li>받은 사람이 <b>받은 파일 합치기</b>를 눌러 그 파일을 고릅니다.</li></ol><div class="btns"><button type="button" class="main" data-act="share">기록 보내기</button><button type="button" data-act="pick">받은 파일 합치기</button></div></div></section>'
-   +'<section class="card"><h2>백업</h2><div class="stack"><p class="note">기록 '+count+'건 · 마지막 백업 '+esc(when(cfg.lastBackupAt))+'</p><div class="btns"><button type="button" data-act="backup">휴대폰에 저장</button><button type="button" data-act="share">iCloud·구글 드라이브에 저장</button></div><p class="note">휴대폰 안에 저장한 파일은 휴대폰을 잃어버리면 함께 사라집니다. 가끔은 iCloud나 구글 드라이브에도 저장하세요. 새 휴대폰에서는 받은 파일 합치기로 백업 파일을 고르면 복원됩니다. 백업 파일은 엑셀에서도 열립니다.</p></div></section>'
+   +'<section class="card"><h2>백업</h2><div class="stack"><p class="note">기록 '+count+'건'+(liveWeeks().length?' · 주간 기록 '+liveWeeks().length+'건':'')+' · 마지막 백업 '+esc(when(cfg.lastBackupAt))+'</p><div class="btns"><button type="button" data-act="backup">휴대폰에 저장</button><button type="button" data-act="share">iCloud·구글 드라이브에 저장</button></div><p class="note">휴대폰 안에 저장한 파일은 휴대폰을 잃어버리면 함께 사라집니다. 가끔은 iCloud나 구글 드라이브에도 저장하세요. 새 휴대폰에서는 받은 파일 합치기로 백업 파일을 고르면 복원됩니다. 백업 파일은 엑셀에서도 열립니다.</p></div></section>'
    +'<section class="card"><h2>자동 복사본</h2><div class="stack"><p class="note">하루 한 번 이 휴대폰 안에 최근 14개까지 보관합니다. 실수로 잘못 고쳤을 때 되돌리는 용도입니다.</p><div id="restoreAsk"></div>'+(snaps?'<div class="list">'+snaps+'</div>':'<p class="note">아직 복사본이 없습니다. 기록을 입력하면 다음에 앱을 열 때 만들어집니다.</p>')+'</div></section>'
    +'<section class="card"><h2>앱 이름</h2><form id="appNameForm" class="stack" novalidate><label>맨 위에 표시될 이름<input id="appNameInput" autocomplete="off" maxlength="20" placeholder="매상 노트" value="'+esc(cfg.appName||'')+'"></label><p class="note">비워 두면 매상 노트로 돌아갑니다. 이 휴대폰에만 적용됩니다. 홈 화면 아이콘 이름은 아이콘을 추가할 때 정합니다.</p><div class="btns"><button type="submit">앱 이름 저장</button></div></form></section>'
    +'<section class="card"><h2>내 이름</h2><form id="nameForm" class="stack" novalidate><label>입력자로 표시될 이름<input id="nameInput" autocomplete="off" maxlength="20" value="'+esc(cfg.name||'')+'"></label><p class="err" id="nameErr" role="alert" hidden></p><div class="btns"><button type="submit">이름 저장</button></div></form></section>';
@@ -426,9 +462,9 @@ async function handleFile(file){
   if(!file)return;
   if(file.size>5*1024*1024){toast('파일이 너무 큽니다. 백업 파일을 골라 주세요');return}
   try{
-    const{list,bad}=parseBackup(await file.text());
-    if(!list.length){toast('읽을 수 있는 기록이 없습니다');return}
-    merge={...planMerge(list),bad};tab='data';await render();
+    const{list,wlist,bad}=parseBackup(await file.text());
+    if(!list.length&&!wlist.length){toast('읽을 수 있는 기록이 없습니다');return}
+    merge={...planMerge(list,wlist),bad};tab='data';await render();
     const m=$('mergeCard');if(m)m.scrollIntoView({block:'start'});
   }catch(e){toast('매상 노트 백업 파일이 아닙니다. 다른 파일을 골라 주세요')}
 }
@@ -460,7 +496,7 @@ document.addEventListener('click',async e=>{
     $('restoreAsk').scrollIntoView({block:'nearest'});return}
   if(b&&b.dataset.restoreYes){
     const s=snapList.find(x=>x.id===+b.dataset.restoreYes);if(!s)return;
-    await snapshot('되돌리기 전');await replaceAll(s.records);await changed();await render();toast('되돌렸습니다');return}
+    await snapshot('되돌리기 전');await replaceAll(s.records,s.weeks||[]);await changed();await render();toast('되돌렸습니다');return}
   const act=b&&b.dataset.act;
   if(act){switch(act){
     case 'wk-prev':weekStart=addDays(weekStart,-7);render();break;
@@ -507,7 +543,7 @@ if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.s
     if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
     const snaps=await tx('snapshots','readonly',s=>s.getAll());
     const last=snaps[snaps.length-1];
-    if(recs.size&&(!last||last.day!==todayStr()))await snapshot('자동');
+    if((recs.size||weeks.size)&&(!last||last.day!==todayStr()))await snapshot('자동');
     if(!cfg.name)welcome();else render();
   }catch(e){
     $('view').innerHTML='<section class="card"><h2>기록을 열 수 없습니다</h2><p class="note">개인정보 보호 모드를 끄거나 홈 화면의 앱에서 다시 열어 보세요.</p></section>';
