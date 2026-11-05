@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>매상 노트</title>
 <meta name="theme-color" content="#FBFAF5">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -23,7 +23,8 @@
   --font:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Malgun Gothic","Noto Sans KR","Segoe UI",sans-serif;
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;touch-action:pan-x pan-y}
+button,input,select,a,label,tr{touch-action:manipulation}
 body{margin:0;background:var(--desk);color:var(--ink);font:15px/1.5 var(--font);font-variant-numeric:tabular-nums}
 [hidden]{display:none!important}
 .wrap{max-width:640px;margin:0 auto;padding:max(12px,env(safe-area-inset-top,0px)) max(10px,env(safe-area-inset-right,0px)) calc(84px + env(safe-area-inset-bottom,0px)) max(10px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px}
@@ -519,7 +520,7 @@ function statsView(){
     return '<div class="bar"><span>'+(i+1)+'월</span><div class="trk"><div class="fil '+(i===hiM?'hi':i===loM?'lo':'')+'" style="width:'+(e[k]/max*100).toFixed(1)+'%"></div><div class="fil prev" style="width:'+(p[k]/max*100).toFixed(1)+'%"></div></div><span class="val">'+((k==='cents'?e.days:e.cdays)?fmt(e[k]):'-')+tag+'</span></div>'}).join('');
   const tot=a=>a.some(e=>k==='cents'?e.days:e.cdays)?fmt(a.reduce((t,e)=>t+e[k],0)):'-';
   const opts=yearsWithData().map(y=>'<option value="'+y+'"'+(y===statYear?' selected':'')+'>'+y+'년</option>').join('');
-  return '<section class="sheet"><div class="row"><h2>분석</h2><select id="statYear" aria-label="연도" style="width:104px;height:36px;font-size:15px">'+opts+'</select></div>'
+  return '<section class="sheet"><div class="row"><h2>분석</h2><select id="statYear" aria-label="연도" style="width:108px;height:36px;font-size:16px">'+opts+'</select></div>'
    +'<div class="btns" style="margin-top:0;flex-wrap:nowrap;height:56px;align-items:center"><button type="button" class="tog" data-key="customers" aria-pressed="'+(k==='customers')+'">손님 수 기준</button><button type="button" class="tog" data-key="cents" aria-pressed="'+(k==='cents')+'">매상 기준</button></div>'
    +'<div class="stats">'+wbox('가장 바쁜 주',hi)+wbox('가장 한가한 주',lo)+'</div>'
    +'<p class="small">끝난 주 중 4일 이상 입력한 주와 주간 기록을 비교합니다.</p><p class="small">손님 수 기준에는 주간 기록이 빠집니다. 며칠 안 되는 연말 주도 빠집니다.</p><div class="gap"></div>'
@@ -705,6 +706,8 @@ document.addEventListener('change',e=>{
 });
 document.addEventListener('input',e=>{if(e.target.id==='fSales'||e.target.id==='fCust'){const x=$('fErr');if(x)x.hidden=true}if(e.target.id==='eAmt'){const x=$('eErr');if(x)x.hidden=true}});
 
+['gesturestart','gesturechange','gestureend'].forEach(t=>document.addEventListener(t,e=>e.preventDefault(),{passive:false}));
+document.addEventListener('touchmove',e=>{if(e.touches.length>1)e.preventDefault()},{passive:false});
 let deferredInstall=null;
 addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(cfg.name)renderBanners()});
 if('serviceWorker'in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
