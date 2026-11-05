@@ -57,7 +57,8 @@ table.wk{width:100%;border-collapse:collapse;table-layout:fixed;line-height:28px
 .wk.wkd th{font-size:13px}
 .mini{font-size:11px;font-weight:400;color:var(--ink2);margin-left:3px}
 .today .mini{color:var(--pen)}
-.wk .lft,.wk th.lft{text-align:left}
+.wk .lft,.wk th.lft{text-align:left;overflow:hidden;text-overflow:ellipsis}
+.catSum{font-size:16px;font-weight:600;cursor:pointer;padding:2px 0}
 .exl td.lft{overflow:hidden;text-overflow:ellipsis}
 .exl tr[data-exp]{cursor:pointer}
 .exl tr[data-exp]:hover td{background:rgba(31,78,140,.05)}
@@ -242,7 +243,7 @@ function parseBackup(text){
   rows.slice(1).forEach((r,i)=>{
     const date=normDate(r[col('날짜')]||'');const cents=parseMoney(r[col('매상')]||'');const cust=String(r[col('손님')]||'').trim();
     if(col('종류')>=0&&(r[col('종류')]||'').trim()==='지출'){
-      const id=(r[col('번호')]||'').trim();const cat=cleanText(r[col('항목')],20);
+      const id=(r[col('번호')]||'').trim();const cat=cleanText(r[col('항목')],40);
       if(!date||!cents||!id||id.length>64||!cat){bad.push(i+2);return}
       const at=r[col('수정시각')]||'';
       elist.push({id,date,cents,cat,memo:cleanText(r[col('메모')],60),by:cleanName(r[col('입력자')]),updatedAt:isNaN(Date.parse(at))?'':at,deleted:(r[col('상태')]||'').trim()==='삭제',rej:[]});
@@ -535,13 +536,13 @@ function shiftMonth(m,n){const d=new Date(Date.UTC(Number(m.slice(0,4)),Number(m
 function expView(){
   const list=liveExps().filter(x=>x.date.slice(0,7)===expMonth).sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:(a.updatedAt<b.updatedAt?1:-1));
   const total=list.reduce((t,x)=>t+x.cents,0);
-  const opts=[...new Set([...cats(),...(expEdit&&exps.get(expEdit)?[exps.get(expEdit).cat]:[])])].map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
+  const opts=[...new Set([...cats(),...(expEdit&&exps.get(expEdit)?[exps.get(expEdit).cat]:[])])].sort((x,y)=>x.localeCompare(y,'ko',{sensitivity:'base'})).map(c=>'<option value="'+esc(c)+'">'+esc(c)+'</option>').join('');
   const rows=list.map(x=>'<tr data-exp="'+esc(x.id)+'"><td>'+md(x.date)+'</td><td class="lft"><span class="ecat">'+esc(x.cat)+'</span>'+(x.memo?'<span class="mini">'+esc(x.memo)+'</span>':'')+'</td><td>'+usd(x.cents)+'</td></tr>').join('');
-  const catRows=cats().map((c,i)=>'<div><input id="cat'+i+'" data-cat="'+i+'" value="'+esc(c)+'" maxlength="20" aria-label="항목 이름"><button type="button" class="mini danger" data-cat-del="'+i+'">빼기</button></div>').join('');
+  const catRows=cats().map((c,i)=>'<div><input id="cat'+i+'" data-cat="'+i+'" value="'+esc(c)+'" maxlength="40" aria-label="항목 이름"><button type="button" class="mini danger" data-cat-del="'+i+'">빼기</button></div>').join('');
   return '<section class="card"><h2>'+(expEdit?'지출 고치기':'지출 입력')+'</h2><form id="expForm" class="stack" novalidate><div class="fields"><label class="wide">날짜<input id="eDate" type="date" max="'+todayStr()+'"></label><label>금액 ($)<input id="eAmt" inputmode="decimal" autocomplete="off" placeholder="1200.00"></label><label>항목<select id="eCat">'+opts+'</select></label><label class="wide">메모 (선택)<input id="eMemo" autocomplete="off" maxlength="60" placeholder="11월분"></label><button type="submit" class="main" style="align-self:end">'+(expEdit?'고치기':'저장')+'</button></div><p class="note" id="eInfo"></p><p class="err" id="eErr" role="alert" hidden></p><div id="eConfirm"></div>'+(expEdit?'<div class="btns"><button type="button" data-act="exp-cancel">취소</button><button type="button" class="danger" data-act="exp-del-ask">삭제</button></div>':'')+'</form></section>'
    +'<section class="sheet" id="expSheet"><div class="row navrow"><h2 style="white-space:nowrap">'+monthLabel(expMonth)+'</h2><span class="wkTotal" id="expTotal">'+usd(total)+'</span><div class="wkNav"><button type="button" class="mini" data-act="exp-prev" aria-label="이전 달">&#9664;&#xFE0E;</button><button type="button" class="mini" data-act="exp-next" aria-label="다음 달">&#9654;&#xFE0E;</button></div></div>'
    +(rows?'<table class="wk wkd exl" aria-label="지출 내역"><thead><tr><th style="width:17%">날짜</th><th class="lft" style="width:55%">항목</th><th style="width:28%">금액</th></tr></thead><tbody>'+rows+'</tbody></table><p class="small">줄을 누르면 고치거나 지울 수 있습니다.</p>':'<p class="small">이 달에 입력한 지출이 없습니다. 위에서 첫 지출을 넣어 보세요.</p>')+'</section>'
-   +'<section class="card"><h2>항목 관리</h2><div class="stack"><div class="list catlist">'+catRows+'</div><p class="note">이름을 고치면 이미 입력한 지출의 항목 이름도 함께 바뀝니다. 항목을 빼도 이미 입력한 지출은 그대로 남습니다.</p><p class="err" id="catErr" role="alert" hidden></p><form id="catForm" class="btns" novalidate><input id="catNew" maxlength="20" placeholder="새 항목 이름" aria-label="새 항목 이름" style="flex:2 1 150px"><button type="submit">항목 추가</button></form></div></section>';
+   +'<section class="card"><details'+(cats().length<=12?' open':'')+'><summary class="catSum">항목 관리 ('+cats().length+'개)</summary><div class="stack" style="margin-top:10px"><div class="list catlist">'+catRows+'</div><p class="note">이름을 고치면 이미 입력한 지출의 항목 이름도 함께 바뀝니다. 항목을 빼도 이미 입력한 지출은 그대로 남습니다.</p><p class="err" id="catErr" role="alert" hidden></p><form id="catForm" class="btns" novalidate><input id="catNew" maxlength="40" placeholder="새 항목 이름" aria-label="새 항목 이름" style="flex:2 1 150px"><button type="submit">항목 추가</button></form></div></details></section>';
 }
 function fillExp(){
   const x=expEdit&&exps.get(expEdit);
@@ -566,7 +567,7 @@ async function submitExp(){
 }
 async function deleteExp(id){const o=exps.get(id);if(!o)return;await putExp({...o,deleted:true,by:cfg.name||'',updatedAt:new Date().toISOString()});expEdit=null;await render();toast('지출을 삭제했습니다')}
 async function renameCat(i,name){
-  const list=[...cats()];const old=list[i];const nw=cleanText(name,20);const e=$('catErr');e.hidden=true;
+  const list=[...cats()];const old=list[i];const nw=cleanText(name,40);const e=$('catErr');e.hidden=true;
   if(nw===old)return;
   if(!nw||list.includes(nw)){e.textContent=nw?'같은 이름의 항목이 이미 있습니다.':'항목 이름을 입력하세요.';e.hidden=false;$('cat'+i).value=old;return}
   list[i]=nw;await setCfg('expCats',list);
@@ -690,7 +691,7 @@ document.addEventListener('submit',async e=>{
   e.preventDefault();
   if(e.target.id==='entry')submitEntry();
   if(e.target.id==='expForm')submitExp();
-  if(e.target.id==='catForm'){const n=cleanText($('catNew').value,20);const x=$('catErr');x.hidden=true;if(!n||cats().includes(n)){x.textContent=n?'같은 이름의 항목이 이미 있습니다.':'항목 이름을 입력하세요.';x.hidden=false;return}await setCfg('expCats',[...cats(),n]);await setCfg('lastCat',n);render();toast('항목을 추가했습니다')}
+  if(e.target.id==='catForm'){const n=cleanText($('catNew').value,40);const x=$('catErr');x.hidden=true;if(!n||cats().includes(n)){x.textContent=n?'같은 이름의 항목이 이미 있습니다.':'항목 이름을 입력하세요.';x.hidden=false;return}await setCfg('expCats',[...cats(),n]);await setCfg('lastCat',n);render();toast('항목을 추가했습니다')}
   if(e.target.id==='firstForm'){const n=cleanName($('firstName').value);if(!n){const x=$('firstErr');x.textContent='이름을 입력하세요.';x.hidden=false;return}await setCfg('name',n);$('tabs').hidden=false;render()}
   if(e.target.id==='appNameForm'){await setCfg('appName',String($('appNameInput').value).trim().slice(0,20));await render();toast('앱 이름을 저장했습니다')}
   if(e.target.id==='nameForm'){const n=cleanName($('nameInput').value);if(!n){const x=$('nameErr');x.textContent='이름을 입력하세요.';x.hidden=false;return}await setCfg('name',n);render();toast('이름을 저장했습니다')}
